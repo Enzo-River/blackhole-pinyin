@@ -702,7 +702,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v11';
+var BUILD = 'v12';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -2638,11 +2638,16 @@ function openProgress(){
   b4.onclick=function(){ document.getElementById('panel').classList.add('hide'); startReviewErr(); };
   var b5=document.createElement('button'); b5.className='btn'; b5.textContent='🖼 生成进度长图'; b5.style.flex='1 1 100%';
   b5.onclick=function(){ Sfx.click(); genProgressImage(); };
-  row.appendChild(b1); row.appendChild(b2); row.appendChild(b3); row.appendChild(b4); row.appendChild(b5); sc.appendChild(row);
+  var b6=document.createElement('button'); b6.className='btn on'; b6.textContent='📤 备份进度（可还原）'; b6.style.flex='1 1 100%';
+  b6.onclick=function(){ Sfx.click(); bkDownload(); };
+  var b7=document.createElement('button'); b7.className='btn'; b7.textContent='📥 导入进度（换手机还原）'; b7.style.flex='1 1 100%';
+  b7.onclick=function(){ Sfx.click(); openRestore(); };
+  row.appendChild(b1); row.appendChild(b2); row.appendChild(b3); row.appendChild(b4); row.appendChild(b5);
+  row.appendChild(b6); row.appendChild(b7); sc.appendChild(row);
   var t2=document.createElement('div'); t2.className='tip'; t2.style.marginTop='10px';
   t2.innerHTML = IS_WX
-    ? '进度存在<b>这台手机/这台浏览器</b>里，换设备或清缓存会丢 —— 微信里点「生成长按复制文本」，长按文本框即可复制进度发给家长。'
-    : '进度存在<b>这台手机/这台浏览器</b>里，换设备或清缓存会丢 —— 重要记录建议点「导出 txt」留一份发家长。';
+    ? '进度存在<b>这台手机/这台浏览器</b>里，换设备或清缓存会丢 —— 微信里点「📤 备份进度」生成备份码，<b>长按复制</b>存好；换设备时点「📥 导入进度」粘贴即可还原。'
+    : '进度存在<b>这台手机/这台浏览器</b>里，换设备或清缓存会丢 —— 点「📤 备份进度」存一份 .json，换设备时「📥 导入进度」即可还原（旧「导出 txt」只是给人看的报告，无法还原）。';
   sc.appendChild(t2);
   document.getElementById('panelExtra').innerHTML=
     '<div class="tip" style="text-align:right"><button class="btn" id="btnBackLv">← 返回关卡列表</button></div>';
@@ -2697,6 +2702,146 @@ function dlProgress(){
     setTimeout(function(){ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a); }catch(e){} }, 1500);
     toast('已导出 txt（没看到请查下载/文件目录）', 2.8);
   }catch(e){ toast('导出失败，可用「复制进度文本」', 2.6); }
+}
+
+/* ---------- 12b. 进度备份 / 还原（v12）----------
+   背景：进度只存 localStorage，换手机 / 清缓存 / 重装微信就全丢；
+   旧的「导出 txt」是给人读的**报告**，没法回填（全文件原本没有任何导入函数）。
+   这里补上真正可还原的存档：
+     导出 = 一段带校验位的 JSON（微信内长按复制，浏览器里下载 .json）；
+     导入 = 粘贴 / 选文件 → 校验 → 预览「将恢复 X 关 / Y 字」→ 确认后覆盖回填。 */
+var BK_VER = 1;
+function bkSig(o){ return hzHash(JSON.stringify(o)); }   // 校验位：防粘贴截断 / 手改
+function bkBuild(){
+  return {app:'bhpy', v:BK_VER, ts:Date.now(), prog:S.prog, custom:(CUSTOM||[])};
+}
+function bkText(){
+  var o=bkBuild();
+  o.sig=bkSig({prog:o.prog, custom:o.custom});
+  return JSON.stringify(o);
+}
+function bkName(){
+  var d=new Date(), q=function(n){ return ('0'+n).slice(-2); };
+  return '拼音进度备份-'+d.getFullYear()+q(d.getMonth()+1)+q(d.getDate())+'-'+q(d.getHours())+q(d.getMinutes())+'.json';
+}
+function bkDownload(){
+  var t=bkText();
+  if(IS_WX){ bkShowText(t); return; }        // 微信不支持文件下载 → 改走长按复制
+  try{
+    var blob=new Blob([t], {type:'application/json;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=bkName();
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a); }catch(e){} }, 1500);
+    toast('备份已下载（.json），换设备时导入即可还原', 2.8);
+  }catch(e){ bkShowText(t); }
+}
+/* 微信内：把备份码放进可长按复制的文本框（避开「请在外部浏览器打开」） */
+function bkShowText(t){
+  var box=document.getElementById('bkOutBox');
+  if(!box){
+    box=document.createElement('div'); box.id='bkOutBox'; box.className='tip'; box.style.marginTop='10px';
+    var ta=document.createElement('textarea'); ta.id='bkOutArea'; ta.readOnly=true;
+    ta.style.cssText='width:100%;height:150px;font-size:12px;line-height:1.6;color:#eaf0ff;'+
+      'background:rgba(0,0,0,.28);border:1px solid rgba(140,170,255,.35);border-radius:12px;'+
+      'padding:10px;resize:none;box-sizing:border-box;user-select:text;-webkit-user-select:text';
+    box.appendChild(ta);
+    var h=document.createElement('div');
+    h.style.cssText='font-size:12px;opacity:.82;margin-top:7px;text-align:center;line-height:1.5';
+    h.textContent='↑ 长按文本框「全选」并「复制」，存备忘录或发家长；换设备时在「导入进度」里粘贴即可还原。';
+    box.appendChild(h);
+    var ps=document.getElementById('panelScroll'); if(ps) ps.appendChild(box);
+  }
+  document.getElementById('bkOutArea').value=t;
+  toast('备份码已生成，长按上方文本框复制', 2.8);
+}
+/* 解析 + 校验（返回 {ok:obj} 或 {err:'原因'}） */
+function bkParse(t){
+  t=String(t||'').trim();
+  if(!t) return {err:'请先粘贴备份内容'};
+  var o;
+  try{ o=JSON.parse(t); }catch(e){ return {err:'这段内容不是有效的备份（解析失败），请确认完整复制了'} };
+  if(!o || o.app!=='bhpy') return {err:'这不是本游戏的进度备份（缺少 bhpy 标记）'};
+  if(!o.prog || typeof o.prog!=='object') return {err:'备份里没有进度数据'};
+  var want=bkSig({prog:o.prog, custom:o.custom||[]});
+  if(typeof o.sig==='number' && o.sig!==want)
+    return {err:'备份不完整或被改动过（校验不通过），请重新完整复制一遍'};
+  return {ok:o};
+}
+/* 导入面板 */
+function openRestore(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='导入进度（还原）';
+  sc.innerHTML='';
+  var tip=document.createElement('div'); tip.className='tip';
+  tip.innerHTML='把之前备份的<b>整段备份码</b>粘贴进来，就能还原星星、通关记录和认字进度。<br>'+
+    '<span style="opacity:.8">换手机 / 清缓存后靠它找回进度。导入会<b>覆盖</b>当前进度，建议先备份现在的。</span>';
+  sc.appendChild(tip);
+  var ta=document.createElement('textarea'); ta.id='bkIn'; ta.placeholder='在这里粘贴备份码…';
+  ta.style.cssText='width:100%;height:150px;font-size:12px;line-height:1.6;color:#eaf0ff;'+
+    'background:rgba(0,0,0,.28);border:1px solid rgba(140,170,255,.35);border-radius:12px;'+
+    'padding:10px;resize:none;box-sizing:border-box';
+  sc.appendChild(ta);
+  var msg=document.createElement('div'); msg.id='bkMsg'; msg.className='tip'; msg.style.marginTop='10px';
+  sc.appendChild(msg);
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+  var bOk=document.createElement('button'); bOk.className='btn on'; bOk.textContent='✅ 校验并还原';
+  bOk.style.flex='1 1 46%';
+  var bFile=document.createElement('button'); bFile.className='btn';
+  bFile.textContent = IS_WX ? '📋 微信里粘贴即可' : '📂 选择 .json 文件';
+  bFile.style.flex='1 1 46%';
+  var bBack=document.createElement('button'); bBack.className='btn'; bBack.textContent='← 返回';
+  bBack.style.flex='1 1 100%';
+  row.appendChild(bOk); row.appendChild(bFile); row.appendChild(bBack); sc.appendChild(row);
+
+  function show(txt,col){ msg.style.color=col||'#ffd166'; msg.innerHTML=txt; }
+  function use(t){
+    var r=bkParse(t);
+    if(r.err){ show('❌ '+r.err, '#ff8a3d'); return; }
+    var o=r.ok, p=o.prog;
+    var passedC=Object.keys(p.passed||{}).length, knownC=Object.keys(p.known||{}).length;
+    var custN=(o.custom && o.custom.length) || 0, d=o.ts? new Date(o.ts) : null;
+    var ds = d ? (d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)
+                 +' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)) : '未知时间';
+    show('✅ 校验通过 —— 这份备份是 <b>'+ds+'</b> 的进度：<br>'+
+      '⭐ 星星 <b>'+(p.stars||0)+'</b>　通关 <b>'+passedC+'</b> 关　已认 <b>'+knownC+'</b> 字'+
+      (custN ? '　我的字表 <b>'+custN+'</b> 字' : '')+
+      '<br><span style="opacity:.85">确认后当前进度会被覆盖。</span>', '#6ce3bb');
+    bOk.textContent='⚠️ 确认覆盖并还原';
+    bOk.onclick=function(){ bkApply(o); };      // 二次确认后才真正写入
+  }
+  bOk.onclick=function(){ use(ta.value); };
+  bFile.onclick=function(){
+    if(IS_WX){ show('微信里请用「粘贴备份码」的方式（不支持选文件）', '#ffd166'); return; }
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.json,application/json,text/plain';
+    inp.onchange=function(){
+      var f=inp.files && inp.files[0]; if(!f) return;
+      var fr=new FileReader();
+      fr.onload=function(){ ta.value=String(fr.result||''); use(ta.value); };
+      fr.readAsText(f,'utf-8');
+    };
+    inp.click();
+  };
+  bBack.onclick=function(){ Sfx.click(); openProgress(); };
+  document.getElementById('panelExtra').innerHTML='';
+  document.getElementById('panel').classList.remove('hide');
+}
+/* 真正回填（覆盖当前进度） */
+function bkApply(o){
+  var p=o.prog||{};
+  S.prog={passed:p.passed||{}, stars:p.stars||0, known:p.known||{}, err:p.err||{},
+          seenTut:!!p.seenTut, diff:(DIFF[p.diff]? p.diff : 2)};
+  saveProg();
+  try{
+    var cu=Array.isArray(o.custom)? o.custom : [];
+    localStorage.setItem('bhpy_custom', JSON.stringify(cu));
+  }catch(e){}
+  loadCustom();                                   // 重新注入自定义字的 PIN
+  try{ if(S.level) updateTop(); }catch(e){}       // 关内导入时顺带刷新顶栏（面板里 S.level 可能为空）
+  toast('进度已还原：⭐'+S.prog.stars+'　认字 '+Object.keys(S.prog.known).length+' 个', 3);
+  try{ Sfx.win(); }catch(e){}
+  openProgress();
 }
 
 /* 微信专用：把进度文本放进可长按复制的文本框（微信 WebView 不支持文件下载，
