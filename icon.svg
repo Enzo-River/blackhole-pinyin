@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#0a0d24"/>
+      <stop offset="100%" stop-color="#05060f"/>
+    </radialGradient>
+    <radialGradient id="hole" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#000000"/>
+      <stop offset="60%" stop-color="#05060f"/>
+      <stop offset="100%" stop-color="#1b2350"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7da3ff"/>
+      <stop offset="100%" stop-color="#c89bff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <circle cx="256" cy="232" r="120" fill="url(#hole)"/>
+  <circle cx="256" cy="232" r="120" fill="none" stroke="url(#ring)" stroke-width="14" opacity="0.95"/>
+  <circle cx="256" cy="232" r="148" fill="none" stroke="#ffd166" stroke-width="3" opacity="0.5"/>
+  <g fill="#ffd166">
+    <path d="M256 70 l9 26 27 1 -21 18 7 27 -22 -15 -22 15 7 -27 -21 -18 27 -1z"/>
+    <path d="M150 300 l6 18 19 1 -15 13 5 19 -15 -10 -15 10 5 -19 -15 -13 19 -1z" opacity="0.9"/>
+    <path d="M372 300 l6 18 19 1 -15 13 5 19 -15 -10 -15 10 5 -19 -15 -13 19 -1z" opacity="0.9"/>
+  </g>
+  <text x="256" y="430" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-size="64" font-weight="800" fill="#eaf0ff">拼音</text>
+  <text x="256" y="476" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-size="30" font-weight="600" fill="#9ec1ff">大作战</text>
+</svg>

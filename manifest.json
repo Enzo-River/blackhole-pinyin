@@ -1,0 +1,15 @@
+{
+  "name": "黑洞入侵·拼音大作战",
+  "short_name": "拼音大作战",
+  "description": "幼小衔接识字拼音游戏",
+  "lang": "zh-CN",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

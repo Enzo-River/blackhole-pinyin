@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>黑洞入侵 · 拼音大作战</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="拼音大作战">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#05060f;
@@ -93,7 +99,16 @@
   .lvnode .lvtag{font-size:11px;opacity:.62;margin-top:auto}
   .lvnode.locked{opacity:.4;cursor:default}
   .lvnode.done{background:rgba(120,255,200,.14);border-color:rgba(120,255,200,.4)}
-  @keyframes lvpop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+  .lvnode.done::after{content:'★';position:absolute;left:9px;bottom:7px;font-size:11px;color:#7dffc4;opacity:.85}
+  /* 刚解锁的下一关：脉冲高亮 + 解锁徽标 */
+  .lvnode.justunlocked{animation:lvunlock 1.1s ease both;border-color:#ffd166;
+    box-shadow:0 0 0 2px rgba(255,209,102,.6),0 0 22px rgba(255,209,102,.45)}
+  .lvnode.justunlocked::before{content:'🎉 解锁';position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+    background:#ffd166;color:#3a2a00;font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;white-space:nowrap;
+    animation:lvbadge .4s ease both}
+  @keyframes lvunlock{0%{transform:scale(.8);opacity:.3}
+    40%{transform:scale(1.08);opacity:1}70%{transform:scale(.97)}100%{transform:scale(1)}}
+  @keyframes lvbadge{from{transform:translateX(-50%) translateY(6px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
   @media (min-width:780px){ .lvmap{grid-template-columns:repeat(3,1fr)} }
 
   /* 手机 / 窄屏适配 */
@@ -493,7 +508,18 @@ var ZI = [
   ['找','zhǎo','🔍'],['问','wèn','❓'],['答','dá','💬'],['送','sòng','🎁'],
   ['抱','bào','🤗'],['推','tuī','👐'],
   // 31 假期作业（老师手写卡片 49 字，2026-10-07 识别）
-  ['色','sè','🎨'],['毛','máo','🪶'],['可','kě','👌'],['兴','xīng','🎉'],['布','bù','🧵'],['正','zhèng','✔️'],['方','fāng','🧊'],  ['广','guǎng','🏫'],['平','píng','⚖️'],['什','shén','❓'],['么','me','❔'],['怎','zěn','❓'],['没','méi','💧'],['间','jiān','📦'],  ['回','huí','🔁'],['升','shēng','⬆️'],['告','gào','📢'],['众','zhòng','👥'],['森','sēn','🌲'],['吗','ma','❔'],['吧','ba','🗨️'],  ['呢','ne','🤔'],['啊','a','😮'],['呀','ya','🎈'],['啦','la','🎉'],['比','bǐ','⚖️'],['又','yòu','🔁']
+  ['色','sè','🎨'],['毛','máo','🪶'],['可','kě','👌'],['兴','xīng','🎉'],['布','bù','🧵'],['正','zhèng','✔️'],['方','fāng','🧊'],  ['广','guǎng','🏫'],['平','píng','⚖️'],['什','shén','❓'],['么','me','❔'],['怎','zěn','❓'],['没','méi','💧'],['间','jiān','📦'],  ['回','huí','🔁'],['升','shēng','⬆️'],['告','gào','📢'],['众','zhòng','👥'],['森','sēn','🌲'],['吗','ma','❔'],['吧','ba','🗨️'],  ['呢','ne','🤔'],['啊','a','😮'],['呀','ya','🎈'],['啦','la','🎉'],  ['比','bǐ','⚖️'],['又','yòu','🔁']
+  // 补充常用字（导入兜底，覆盖「川」等易漏字；不在本地 mp3 包的字回退 TTS）
+  ,['川','chuān','🌊'],['河','hé','💧'],['江','jiāng','🌊'],['湖','hú','🏞️'],['海','hǎi','🌊'],
+  ['城','chéng','🏙️'],['市','shì','🏬'],['校','xiào','🏫'],['班','bān','👥'],['生','shēng','🌱'],
+  ['红','hóng','🔴'],['黄','huáng','🟡'],['蓝','lán','🔵'],['绿','lǜ','🟢'],['白','bái','⚪'],
+  ['黑','hēi','⚫'],['鱼','yú','🐟'],['鸟','niǎo','🐦'],['虫','chóng','🐛'],['马','mǎ','🐴'],
+  ['牛','niú','🐮'],['羊','yáng','🐑'],['猫','māo','🐱'],['狗','gǒu','🐶'],['鸡','jī','🐔'],
+  ['鸭','yā','🦆'],['春','chūn','🌸'],['秋','qiū','🍂'],['风','fēng','🌬️'],['雨','yǔ','🌧️'],
+  ['雪','xuě','❄️'],['星','xīng','⭐'],['光','guāng','💡'],['电','diàn','⚡'],['灯','dēng','💡'],
+  ['路','lù','🛣️'],['桥','qiáo','🌉'],['站','zhàn','🚉'],['立','lì','🧍'],['说','shuō','🗣️'],
+  ['读','dú','📖'],['画','huà','🎨'],['唱','chàng','🎤'],['玩','wán','🎮'],['高','gāo','📏'],
+  ['低','dī','📉'],['冷','lěng','🥶'],['热','rè','🥵'],['香','xiāng','🌸'],['甜','tián','🍬']
 ];
 /* 星球外形：圆 / 方 / 三角 / 星 / 六边 / 房子 / 汽车 / 树 / 云 / 心 / 菱 / 火箭 */
 var ZI_SHAPES = ['circle','square','tri','star','hex','house','car','tree','cloud','heart','diamond','rocket'];
@@ -676,11 +702,12 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v9';
+var BUILD = 'v10';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
 var IS_WX = /MicroMessenger/i.test(navigator.userAgent || '');
+var justUnlocked = -1;   // 刚通关后“新解锁的下一关”索引，openLevels 渲染时做高亮过场
 var CUSTOM = [];   // 家长/老师导入的「我的字表」（{zi,py} 列表），v8 新增
 
 /* ---------- 3. 发音引擎 TTS：本机中文语音（失败自动降级在线合成） ---------- */
@@ -1619,6 +1646,7 @@ function finish(){
   document.getElementById('btnRedo').style.display='none';
   S.winT=3.6; S.combo=0; bigBurst();   // 弹窗背后持续放烟花
   if(!S.level.tmp) S.prog.passed[S.li]=1;   // 临时复习关不冒充正式关卡的通关记录
+  if(!S.level.tmp && S.li+1<LEVELS.length && !S.prog.passed[S.li+1]) justUnlocked=S.li+1;   // 触发下一关解锁过场
   saveProg();
   var em = S.level.type==='zi' ? '📖' : (S.level.type==='free'?'🌟':'🏆');
   document.getElementById('winEmoji').textContent=em;
@@ -2361,7 +2389,9 @@ function openLevels(){
   LEVELS.forEach(function(L,i){
     var unlocked = i===0 || S.prog.passed[i-1];
     var node=document.createElement('div');
-    node.className='lvnode'+(unlocked?'':' locked')+(S.prog.passed[i]?' done':'');
+    var cls='lvnode'+(unlocked?'':' locked')+(S.prog.passed[i]?' done':'');
+    if(i===justUnlocked && unlocked && !S.prog.passed[i]) cls+=' justunlocked';
+    node.className=cls;
     var st = L.diff ? ('<span class="lvstar">'+diffStar(L.diff)+'</span>') : '';
     var tag = S.prog.passed[i] ? '已通关' : (unlocked ? (L.type==='free'?'自由认读':(L.type==='spell'?'拼读':'识字')) : '未解锁');
     node.innerHTML='<span class="lvno">'+(S.prog.passed[i]?'★':(i+1))+'</span>'+
@@ -2390,6 +2420,7 @@ function openLevels(){
   bp.onclick=function(){ Sfx.click(); openProgress(); };
   sc.appendChild(bp);
   document.getElementById('panelExtra').innerHTML='';
+  justUnlocked=-1;   // 高亮过场只用一次
   document.getElementById('panel').classList.remove('hide');
 }
 function openSettings(){
@@ -2464,6 +2495,48 @@ function openSettings(){
   rs.textContent='🗑 清空学习进度';
   rs.onclick=function(){ if(confirm('确定清空所有星星和通关记录？')){ S.prog={passed:{},stars:0,known:{}}; saveProg(); updateTop(); openSettings(); } };
   sc.appendChild(rs);
+  var ah=document.createElement('button'); ah.className='btn on'; ah.style.marginTop='10px';
+  ah.textContent='📲 添加到桌面 / 主屏幕';
+  ah.style.width='100%'; ah.style.textAlign='center';
+  ah.onclick=function(){ Sfx.click(); openAddHome(); };
+  sc.appendChild(ah);
+  document.getElementById('panelExtra').innerHTML='';
+  document.getElementById('panel').classList.remove('hide');
+}
+/* ---------- 12a. 添加到桌面 / 主屏幕引导 ---------- */
+function openAddHome(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='添加到桌面';
+  sc.innerHTML='';
+  var wx=document.createElement('div'); wx.className='tip';
+  if(IS_WX){
+    wx.style.cssText='background:rgba(255,209,102,.14);border:1px solid rgba(255,209,102,.4);color:#ffe6a8';
+    wx.innerHTML='⚠️ 你正在<b>微信</b>里打开。微信内不能直接“添加到主屏幕”，请先：<br>'+
+      '① 点右上角 <b>「···」</b> → 选 <b>「在浏览器打开」</b><br>'+
+      '② 在手机浏览器里再按下面的步骤添加到主屏幕。<br>'+
+      '（iPhone 用 Safari、安卓用系统浏览器都能加；加好后在桌面点图标即玩，体验接近小程序）';
+  } else {
+    wx.innerHTML='把下面的链接像 App 一样放到手机/平板主屏，以后一点就玩，不用每次找链接：';
+  }
+  sc.appendChild(wx);
+  var card=document.createElement('div'); card.className='tip';
+  card.style.cssText='font-size:14px;line-height:2;background:rgba(120,150,255,.1);border-radius:14px;padding:14px';
+  var ios='<b>🍎 iPhone / iPad（Safari）</b><br>① 点底部中间 <b>「分享 ⬆」</b> 按钮<br>'+
+    '② 选 <b>「添加到主屏幕」</b><br>③ 点「添加」，桌面就出现「拼音大作战」图标';
+  var and='<b>🤖 安卓（Chrome / 系统浏览器）</b><br>① 点右上角 <b>「⋮」</b> 菜单<br>'+
+    '② 选 <b>「安装应用 / 添加到主屏幕」</b><br>③ 确认后桌面生成图标';
+  card.innerHTML=ios+'<hr style="border-color:rgba(255,255,255,.12);margin:10px 0">'+
+    and+'<hr style="border-color:rgba(255,255,255,.12);margin:10px 0">'+
+    '<b>🔗 本游戏链接</b><br><span style="word-break:break-all;color:#9ec1ff">'+location.href.split('?')[0]+'</span>';
+  sc.appendChild(card);
+  var cp=document.createElement('button'); cp.className='btn'; cp.style.marginTop='10px';
+  cp.textContent='📋 复制链接'; cp.style.width='100%'; cp.style.textAlign='center';
+  cp.onclick=function(){ try{ navigator.clipboard.writeText(location.href.split('?')[0]); toast('链接已复制', 2); }catch(e){ toast('请长按上面链接复制', 2.4); } };
+  sc.appendChild(cp);
+  var back=document.createElement('button'); back.className='btn'; back.style.marginTop='8px';
+  back.textContent='← 返回设置'; back.style.width='100%'; back.style.textAlign='center';
+  back.onclick=function(){ Sfx.click(); openSettings(); };
+  sc.appendChild(back);
   document.getElementById('panelExtra').innerHTML='';
   document.getElementById('panel').classList.remove('hide');
 }
