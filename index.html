@@ -1,0 +1,2484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>黑洞入侵 · 拼音大作战</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#05060f;
+    font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;color:#eaf0ff;user-select:none;
+    touch-action:none;overscroll-behavior:none}
+  html{height:100dvh}
+  body{height:100dvh}
+  /* 关键：canvas 是替换元素，只给 left/right 不会拉伸，显示宽度会变成
+     canvas.width 属性值（=CSS宽×DPR）。DPR=2 的平板/手机上会宽出一倍，
+     右半屏被裁掉且“点不到”。必须显式给 100% 宽高。 */
+  #stage{position:fixed;top:0;left:0;width:100%;height:100%;display:block;
+    touch-action:none;background:#05060f}
+  .ui{position:absolute}
+
+  /* 顶栏 */
+  #topbar{top:0;left:0;right:0;height:calc(64px + env(safe-area-inset-top));
+    padding:env(safe-area-inset-top) 12px 0;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(180deg,rgba(8,10,26,.92),rgba(8,10,26,0));z-index:5}
+  #lvBox{min-width:0;flex-shrink:1}
+  .btn{background:rgba(120,150,255,.16);border:1px solid rgba(150,180,255,.28);color:#dfe7ff;
+    border-radius:12px;padding:8px 12px;font-size:15px;cursor:pointer;line-height:1}
+  .btn:active{transform:scale(.96)}
+  .btn.on{background:rgba(120,255,200,.2);border-color:rgba(120,255,200,.5)}
+  #lvName{font-size:17px;font-weight:700;margin-left:2px;text-shadow:0 2px 8px #000;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #lvSub{font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .spacer{flex:1}
+  #stars{font-size:17px;font-weight:700;color:#ffd166;white-space:nowrap}
+
+  /* 目标卡 */
+  #goal{bottom:0;left:0;right:0;min-height:104px;display:flex;align-items:center;justify-content:center;
+    gap:14px;flex-wrap:wrap;padding:10px 12px calc(14px + env(safe-area-inset-bottom));
+    background:linear-gradient(0deg,rgba(8,10,26,.94),rgba(8,10,26,0));z-index:5}
+  .slot{min-width:58px;height:58px;border-radius:16px;background:rgba(120,150,255,.12);
+    border:2px dashed rgba(150,180,255,.35);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;font-size:27px;font-weight:800;line-height:1}
+  .slot small{font-size:11px;font-weight:600;opacity:.6;margin-top:2px}
+  .slot.fill{background:rgba(120,255,200,.16);border:2px solid rgba(120,255,200,.6);color:#c9ffe9}
+  .slot.wait{animation:pulse 1.1s infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+  #goalText{font-size:15px;max-width:44vw;line-height:1.5}
+  #goalLeft{display:flex;align-items:center;gap:7px}
+  #goalText b{color:#ffd166;font-size:22px}
+  .arrow{font-size:22px;opacity:.45}
+
+  /* 遮罩 */
+  .mask{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+    background:rgba(4,6,18,.86);backdrop-filter:blur(6px);overflow:auto;padding:12px 0;touch-action:pan-y}
+  .card{background:linear-gradient(160deg,#141a3a,#0c1028);border:1px solid rgba(140,170,255,.28);
+    border-radius:24px;padding:26px 28px;max-width:560px;width:92%;text-align:center;
+    box-shadow:0 24px 70px rgba(0,0,0,.6);
+    max-height:100%;max-height:calc(100dvh - 24px);overflow:auto;-webkit-overflow-scrolling:touch}
+  .card h1{margin:0 0 6px;font-size:28px;letter-spacing:1px}
+  .card h2{margin:0 0 10px;font-size:24px;color:#ffd166}
+  .card p{margin:8px 0;font-size:15px;line-height:1.7;opacity:.86}
+  .big{font-size:46px;margin:6px 0}
+  .row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}
+  .lvbtn{width:100%;text-align:left;display:flex;align-items:center;gap:10px;
+    background:rgba(120,150,255,.12);border:1px solid rgba(150,180,255,.24);border-radius:14px;
+    padding:10px 14px;cursor:pointer;color:#eaf0ff;font-size:15px}
+  .lvbtn .no{width:26px;height:26px;border-radius:9px;background:rgba(255,209,102,.22);
+    color:#ffd166;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:none}
+  .lvbtn.locked{opacity:.42}
+  .lvbtn .tag{margin-left:auto;font-size:12px;opacity:.7}
+  .hide{display:none!important}
+  .close{position:absolute;top:12px;right:14px;font-size:22px;opacity:.6;cursor:pointer}
+  #panelScroll{max-height:60vh;overflow:auto;margin-top:8px;display:grid;gap:8px}
+  .kv{display:flex;justify-content:space-between;font-size:13px;opacity:.8;padding:3px 0;
+    border-bottom:1px dashed rgba(150,180,255,.16)}
+  .sw{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:14px}
+  .tip{font-size:13px;opacity:.7;line-height:1.6;text-align:left;background:rgba(120,150,255,.08);
+    border-radius:12px;padding:10px 12px;margin-top:10px}
+
+  /* 手机 / 窄屏适配 */
+  @media (max-width:520px){
+    #topbar{gap:6px;padding-left:8px;padding-right:8px}
+    .btn{padding:7px 9px;font-size:13px;border-radius:10px}
+    #lvName{font-size:14px}
+    #lvSub{font-size:10px}
+    #stars{font-size:14px}
+    #goal{gap:7px;padding-left:6px;padding-right:6px}
+    .slot{min-width:46px;height:46px;border-radius:12px;font-size:22px}
+    .slot small{font-size:9px}
+    #goalText{max-width:none;font-size:13px}
+    #goalText b{font-size:17px}
+    .arrow{font-size:15px}
+    .card{padding:18px 14px}
+    .card h1{font-size:21px}
+    .card p{font-size:13px}
+    .big{font-size:34px}
+    #panelScroll{max-height:56vh}
+  }
+  @media (max-width:360px){
+    #lvSub{display:none}
+    .slot{min-width:40px;height:40px;font-size:19px}
+  }
+
+  /* 矮屏适配：手机浏览器/微信工具栏会吃掉 150~250px 高度 */
+  @media (max-height:760px){
+    #topbar{height:calc(58px + env(safe-area-inset-top));gap:5px}
+    #lvName{font-size:13px}
+    #lvSub{display:none}
+    .btn{padding:6px 9px;font-size:12px;border-radius:9px}
+    #stars{font-size:13px}
+    #goal{min-height:84px;padding-top:6px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+    .slot{min-width:42px;height:42px;border-radius:11px;font-size:19px;border-width:1.5px}
+    .slot small{font-size:9px}
+    #goalText{font-size:12px;max-width:40vw}
+    #goalText b{font-size:16px}
+    .arrow{font-size:16px}
+    .card{padding:14px 14px}
+    .card h1{font-size:19px;margin-bottom:3px}
+    .card p{font-size:12px;margin:5px 0;line-height:1.55}
+    .big{font-size:28px;margin:2px 0}
+    .lvbtn{padding:7px 11px;font-size:13px;border-radius:11px}
+    .tip{font-size:12px;padding:7px 10px;margin-top:6px;line-height:1.5}
+    #panelScroll{max-height:50vh;grid-template-columns:1fr 1fr}
+    .kv{font-size:12px}
+    .sw{padding:6px 0;font-size:13px}
+  }
+  @media (max-height:640px){
+    #topbar{height:calc(50px + env(safe-area-inset-top))}
+    #goal{min-height:74px}
+    .slot{min-width:36px;height:36px;font-size:16px}
+    .big{font-size:22px}
+    .card h1{font-size:17px}
+    .card p{font-size:11px;margin:3px 0}
+    .lvbtn{padding:6px 10px;font-size:12px}
+    .tip{display:none}
+  }
+  /* 平板 / 大屏（≥600px）：舒展布局，内容不贴边、字号放大 */
+  @media (min-width:600px){
+    #topbar{gap:14px;padding-left:20px;padding-right:20px}
+    #lvName{font-size:19px}
+    #lvSub{font-size:13px}
+    #stars{font-size:19px}
+    .btn{padding:9px 16px;font-size:16px;border-radius:13px}
+    #goal{gap:18px;padding-left:22px;padding-right:22px}
+    .slot{min-width:68px;height:68px;border-radius:19px;font-size:32px}
+    .slot small{font-size:12px}
+    #goalText{font-size:16px}
+    #goalText b{font-size:25px}
+    .arrow{font-size:26px}
+    .card{max-width:660px;padding:30px 34px;border-radius:26px}
+    .card h1{font-size:29px}
+    .card p{font-size:16px}
+    .big{font-size:52px}
+    .lvbtn{font-size:16px;padding:12px 16px;border-radius:15px}
+    #panelScroll{grid-template-columns:1fr 1fr}
+    .tip{font-size:14px}
+  }
+  /* iPad / 大屏竖屏（768~1024px）：加大触控热区与字号 */
+  @media (min-width:768px) and (max-width:1024px){
+    #topbar{gap:16px;padding-left:26px;padding-right:26px;height:calc(76px + env(safe-area-inset-top))}
+    #lvName{font-size:21px} #lvSub{font-size:14px} #stars{font-size:21px}
+    .btn{padding:11px 18px;font-size:17px;border-radius:14px}
+    #goal{gap:20px;padding-left:28px;padding-right:28px;min-height:120px}
+    .slot{min-width:80px;height:80px;border-radius:24px;font-size:40px}
+    .slot small{font-size:13px}
+    #goalText{font-size:18px;max-width:56vw} #goalText b{font-size:28px}
+    .arrow{font-size:28px}
+    .card{max-width:740px;padding:36px 42px} .card h1{font-size:32px} .card p{font-size:17px}
+    .big{font-size:60px}
+    .lvbtn{font-size:17px;padding:13px 18px;border-radius:16px}
+    .tip{font-size:15px;padding:10px 14px}
+  }
+  /* 横屏（手机/iPad 横放）：纵向空间宝贵，压缩上下栏、slot 适中 */
+  @media (orientation:landscape){
+    #topbar{height:calc(50px + env(safe-area-inset-top));gap:8px;padding-left:16px;padding-right:16px}
+    #lvName{font-size:15px} #lvSub{display:none} #stars{font-size:15px}
+    .btn{padding:7px 13px;font-size:14px;border-radius:11px}
+    #goal{min-height:80px;gap:12px;padding:8px 16px calc(10px + env(safe-area-inset-bottom))}
+    .slot{min-width:54px;height:54px;border-radius:15px;font-size:25px}
+    .slot small{font-size:10px}
+    #goalText{font-size:13px;max-width:48vw} #goalText b{font-size:20px}
+    .arrow{font-size:20px}
+    .card{max-width:680px;padding:24px 30px} .card h1{font-size:26px} .card p{font-size:15px}
+    .big{font-size:42px}
+    .lvbtn{font-size:15px;padding:10px 14px;border-radius:13px}
+    .tip{font-size:13px}
+  }
+  /* 横屏大屏（iPad 横放 1194×834 / 1024×768）：slot 再放大一点 */
+  @media (orientation:landscape) and (min-width:768px){
+    #topbar{height:calc(58px + env(safe-area-inset-top))}
+    #goal{min-height:96px}
+    .slot{min-width:66px;height:66px;font-size:31px}
+    #goalText{font-size:15px;max-width:56vw} #goalText b{font-size:24px}
+    .card{max-width:820px}
+    .tip{font-size:14px}
+  }
+  /* 微信等内置浏览器下拉露出白色背景时兜底 */
+  #stage{background:#05060f}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<header id="topbar" class="ui">
+  <button class="btn" id="btnMenu">☰ 关卡</button>
+  <div id="lvBox">
+    <div id="lvName">黑洞入侵 · 拼音大作战</div>
+    <div id="lvSub">点一下拼音星球，黑洞就会飞过去把它吸走</div>
+  </div>
+  <div class="spacer"></div>
+  <div id="stars">⭐ 0</div>
+  <button class="btn on" id="btnVoice" title="朗读开关">🔊</button>
+  <button class="btn" id="btnSet" title="老师设置">⚙</button>
+  <button class="btn" id="btnRedo" title="重来本关" style="display:none">↻</button>
+</header>
+
+<div id="goal" class="ui">
+  <div id="goalLeft"></div>
+  <div id="goalText">准备好了吗？出发！</div>
+</div>
+
+<!-- 开始页 -->
+<div class="mask" id="startMask">
+  <div class="card">
+    <div class="big">🕳️</div>
+    <h1>黑洞入侵 · 拼音大作战</h1>
+    <p>一个贪吃的黑洞闯进了拼音星系。<br>
+       <b style="color:#ffd166">点一下拼音星球</b>，黑洞就会飞过去把它吸进去，<br>
+       然后<b style="color:#ffd166">大声读出它的发音</b>！</p>
+    <div class="row">
+      <button class="btn" id="btnStart" style="font-size:19px;padding:14px 30px;background:linear-gradient(135deg,#6ea8ff,#8f6eff);border:none;font-weight:700">▶ 开始游戏</button>
+      <button class="btn" id="btnTeacher">👩‍🏫 老师须知</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="btnProgStart">📊 家长看进度</button>
+      <button class="btn" id="btnDiffStart">🎚 难度分层</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="btnClean" style="font-size:13px;opacity:.9">🧹 清理缓存 · 用最新版</button>
+      <button class="btn" id="btnCopyLink" style="font-size:13px;opacity:.9">📋 复制最新版链接</button>
+    </div>
+    <div class="tip" id="voiceState">正在检测发音引擎…</div>
+  </div>
+</div>
+
+<!-- 过关页 -->
+<div class="mask hide" id="winMask">
+  <div class="card">
+    <div class="big" id="winEmoji">🎉</div>
+    <h2 id="winTitle">太棒了！</h2>
+    <p id="winDesc">这一关的拼音都被黑洞吃掉啦！</p>
+    <div class="row">
+      <button class="btn" id="btnNext" style="font-size:18px;padding:12px 26px;background:linear-gradient(135deg,#6ea8ff,#8f6eff);border:none;font-weight:700">下一关 ▶</button>
+      <button class="btn" id="btnRetry">再玩一次</button>
+      <button class="btn" id="btnBack2">关卡列表</button>
+    </div>
+  </div>
+</div>
+
+<!-- 关卡 / 设置面板 -->
+<div class="mask hide" id="panel">
+  <div class="card" style="position:relative">
+    <span class="close" id="panelClose">✕</span>
+    <h1 style="font-size:22px" id="panelTitle">选择关卡</h1>
+    <div id="panelScroll"></div>
+    <div id="panelExtra"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   黑洞入侵 · 拼音大作战
+   幼小衔接拼音学习游戏 —— 单文件 / 零依赖 / 离线可玩
+   ============================================================ */
+
+/* ---------- 1. 拼音数据 ---------- */
+// 声母（显示为拼音，朗读时用示例汉字，TTS 读汉字最准）
+var SHENGMU = [
+  ['b','玻'],['p','坡'],['m','摸'],['f','佛'],
+  ['d','得'],['t','特'],['n','讷'],['l','勒'],
+  ['g','哥'],['k','科'],['h','喝'],
+  ['j','鸡'],['q','七'],['x','西'],
+  ['zh','知'],['ch','吃'],['sh','诗'],['r','日'],
+  ['z','资'],['c','次'],['s','思'],
+  ['y','衣'],['w','乌']
+];
+// 韵母
+var YUNMU = [
+  ['a','啊'],['o','喔'],['e','鹅'],['i','衣'],['u','乌'],['ü','鱼'],
+  ['ai','爱'],['ei','诶'],['ui','威'],['ao','熬'],['ou','欧'],['iu','优'],
+  ['ie','耶'],['üe','约'],['er','儿'],
+  ['an','安'],['en','恩'],['in','因'],['un','温'],['ün','晕'],
+  ['ang','昂'],['eng','鞥'],['ing','英'],['ong','轰']
+];
+var PIN = {}; // id -> {py, say, kind}
+SHENGMU.forEach(function(a){ PIN[a[0]] = {py:a[0], say:a[1], kind:'sm'}; });
+YUNMU.forEach(function(a){ PIN[a[0]] = {py:a[0], say:a[1], kind:'ym'}; });
+
+// 声调示范（用于读“第几声”）
+var TONE_DEMO = [
+  {t:1, mark:'ˉ', name:'一声', say:'妈'},
+  {t:2, mark:'ˊ', name:'二声', say:'麻'},
+  {t:3, mark:'ˇ', name:'三声', say:'马'},
+  {t:4, mark:'ˋ', name:'四声', say:'骂'}
+];
+var TONE_CHARS = {
+  a:['a','ā','á','ǎ','à'], o:['o','ō','ó','ǒ','ò'], e:['e','ē','é','ě','è'],
+  i:['i','ī','í','ǐ','ì'], u:['u','ū','ú','ǔ','ù'], 'ü':['ü','ǖ','ǘ','ǚ','ǜ']
+};
+function markTone(sy, tone){
+  if(!tone) return sy;
+  var v = null;
+  if(sy.indexOf('a')>=0) v='a';
+  else if(sy.indexOf('o')>=0) v='o';
+  else if(sy.indexOf('e')>=0) v='e';
+  else if(sy.indexOf('iu')>=0) v='u';
+  else if(sy.indexOf('ui')>=0) v='i';
+  else if(sy.indexOf('i')>=0) v='i';
+  else if(sy.indexOf('u')>=0) v='u';
+  else if(sy.indexOf('ü')>=0) v='ü';
+  if(!v) return sy;
+  var i = sy.indexOf(v);
+  return sy.slice(0,i) + TONE_CHARS[v][tone] + sy.slice(i+1);
+}
+
+/* 幼小衔接入门识字：200 个常用字 = 20 组 × 10
+   结构 [汉字, 拼音, 图示 emoji]。形状与配色由字自动生成（见 ZI_SHAPES/ZI_COLORS），
+   主题字（家/车/树/云/房子…）单独指定外形，孩子一眼能认出来玩。 */
+var ZI = [
+  // 01 自然天地
+  ['日','rì','☀️'],['月','yuè','🌙'],['水','shuǐ','💧'],['火','huǒ','🔥'],
+  ['山','shān','⛰️'],['石','shí','🪨'],['土','tǔ','🟫'],['天','tiān','⛅'],
+  ['地','dì','🌍'],['云','yún','☁️'],
+  // 02 我的家人
+  ['爸','bà','👨'],['妈','mā','👩'],['爷','yé','👴'],['奶','nǎi','👵'],['我','wǒ','🧒'],
+  ['你','nǐ','🙋'],['他','tā','🧑'],['哥','gē','👦'],['姐','jiě','👧'],['弟','dì','🍼'],
+  // 03 我的身体
+  ['人','rén','🧍'],['口','kǒu','👄'],['手','shǒu','✋'],['足','zú','🦶'],
+  ['目','mù','👁️'],['耳','ěr','👂'],['头','tóu','👤'],['牙','yá','🦷'],
+  ['鼻','bí','👃'],['发','fà','💇'],
+  // 04 大小方位
+  ['大','dà','🐘'],['小','xiǎo','🐜'],['上','shàng','⬆️'],['下','xià','⬇️'],
+  ['中','zhōng','🎯'],['前','qián','⏩'],['后','hòu','⏪'],['左','zuǒ','◀️'],
+  ['右','yòu','▶️'],['里','lǐ','🏠'],
+  // 05 动物 · 家里养的
+  ['牛','niú','🐮'],['羊','yáng','🐑'],['马','mǎ','🐴'],['鸟','niǎo','🐦'],
+  ['鱼','yú','🐟'],['虫','chóng','🐛'],['猫','māo','🐱'],['狗','gǒu','🐶'],
+  ['兔','tù','🐰'],['鸡','jī','🐔'],
+  // 06 动物 · 山里跑的
+  ['猪','zhū','🐷'],['猴','hóu','🐵'],['象','xiàng','🐘'],['虎','hǔ','🐯'],
+  ['熊','xióng','🐻'],['鸭','yā','🦆'],['鹅','é','🦢'],['鹿','lù','🦌'],
+  ['蛇','shé','🐍'],['蛙','wā','🐸'],
+  // 07 花草树木
+  ['花','huā','🌸'],['草','cǎo','🌿'],['树','shù','🌳'],['叶','yè','🍃'],
+  ['竹','zhú','🎋'],['禾','hé','🌾'],['苗','miáo','🌱'],['林','lín','🌴'],
+  ['枝','zhī','🍂'],['木','mù','🪵'],
+  // 08 颜色
+  ['红','hóng','🔴'],['绿','lǜ','🟢'],['蓝','lán','🔵'],['白','bái','⚪'],
+  ['黑','hēi','⚫'],['黄','huáng','🟡'],['紫','zǐ','🟣'],['粉','fěn','💗'],
+  ['橙','chéng','🟠'],['青','qīng','🍏'],
+  // 09 吃的
+  ['米','mǐ','🍚'],['饭','fàn','🍙'],['面','miàn','🍜'],['菜','cài','🥬'],
+  ['肉','ròu','🍖'],['蛋','dàn','🥚'],['汤','tāng','🍲'],['饼','bǐng','🥞'],
+  ['糖','táng','🍬'],['盐','yán','🧂'],
+  // 10 瓜果豆
+  ['瓜','guā','🍉'],['果','guǒ','🍇'],['苹','píng','🍎'],['梨','lí','🍐'],
+  ['桃','táo','🍑'],['蕉','jiāo','🍌'],['葡','pú','🍓'],['橘','jú','🍊'],
+  ['汁','zhī','🥤'],['豆','dòu','🍢'],
+  // 11 走走坐坐 · 交通
+  ['车','chē','🚗'],['船','chuán','⛵'],['机','jī','✈️'],['飞','fēi','🚀'],
+  ['路','lù','🛣️'],['桥','qiáo','🌉'],['停','tíng','🅿️'],['街','jiē','🏙️'],
+  ['公','gōng','🏞️'],['园','yuán','🎡'],
+  // 12 房子家里
+  ['房','fáng','🏠'],['屋','wū','🏡'],['家','jiā','🏘️'],['门','mén','🚪'],
+  ['窗','chuāng','🖼️'],['床','chuáng','🛏️'],['桌','zhuō','🍽️'],['椅','yǐ','💺'],
+  ['灯','dēng','💡'],['院','yuàn','🎏'],
+  // 13 读书写字
+  ['笔','bǐ','🖊️'],['本','běn','📕'],['纸','zhǐ','📄'],['画','huà','🎨'],
+  ['字','zì','🔤'],['学','xué','🎓'],['读','dú','📖'],['写','xiě','✏️'],
+  ['算','suàn','🔢'],['尺','chǐ','📏'],
+  // 14 一二三四
+  ['一','yī','1️⃣'],['二','èr','2️⃣'],['三','sān','3️⃣'],['四','sì','4️⃣'],
+  ['五','wǔ','5️⃣'],['六','liù','6️⃣'],['七','qī','7️⃣'],['八','bā','8️⃣'],
+  ['九','jiǔ','9️⃣'],['十','shí','🔟'],
+  // 15 多少个数
+  ['百','bǎi','💯'],['千','qiān','🧮'],['万','wàn','💰'],['个','gè','🆗'],
+  ['只','zhī','🐤'],['条','tiáo','🎗️'],['张','zhāng','🗞️'],['把','bǎ','🍴'],
+  ['双','shuāng','👟'],['片','piàn','🍂'],
+  // 16 早午晚
+  ['早','zǎo','🌅'],['晚','wǎn','🌇'],['午','wǔ','⏰'],['今','jīn','📅'],
+  ['昨','zuó','🗓️'],['明','míng','🌗'],['年','nián','🧨'],['周','zhōu','🔄'],
+  ['时','shí','🕒'],['钟','zhōng','🕐'],
+  // 17 动作 · 看得见的
+  ['走','zǒu','🚶'],['跑','pǎo','🏃'],['跳','tiào','🤸'],['看','kàn','👀'],
+  ['听','tīng','🎧'],['说','shuō','🗣️'],['吃','chī','🍽️'],['喝','hē','🍹'],
+  ['笑','xiào','😄'],['哭','kū','😢'],
+  // 18 动作 · 每天做的
+  ['坐','zuò','🧘'],['起','qǐ','⏫'],['睡','shuì','😴'],['醒','xǐng','💫'],
+  ['来','lái','👐'],['去','qù','🤚'],['出','chū','🚪'],['入','rù','🕳️'],
+  ['开','kāi','🔓'],['关','guān','🔒'],
+  // 19 东南西北
+  ['东','dōng','🌐'],['西','xī','🧭'],['南','nán','🌞'],['北','běi','❄️'],
+  ['高','gāo','🏔️'],['矮','ǎi','🐣'],['长','cháng','🧵'],['短','duǎn','✂️'],
+  ['厚','hòu','🧊'],['薄','bó','📃'],
+  // 20 天天在说
+  ['好','hǎo','👍'],['是','shì','✅'],['有','yǒu','⭐'],['在','zài','📍'],
+  ['的','de','🟩'],['了','le','🔘'],['不','bù','⛔'],['会','huì','🤝'],
+  ['要','yào','🛒'],['能','néng','⚡'],
+  // 21 穿在身上
+  ['衣','yī','👕'],['鞋','xié','👟'],['袜','wà','🧦'],['帽','mào','🎩'],
+  ['裤','kù','👖'],['领','lǐng','🧣'],['袖','xiù','👚'],['扣','kòu','⚪'],
+  ['带','dài','🎀'],['包','bāo','👛'],
+  // 22 厨房餐具
+  ['锅','guō','🍲'],['碗','wǎn','🥣'],['勺','sháo','🥄'],['叉','chā','🍴'],
+  ['杯','bēi','🥤'],['盘','pán','🍽️'],['刀','dāo','🔪'],['灶','zào','🔥'],
+  ['油','yóu','🫙'],['瓶','píng','🍾'],
+  // 23 医院健康
+  ['医','yī','🏥'],['病','bìng','🤒'],['药','yào','💊'],['疼','téng','🤕'],
+  ['痛','tòng','🩹'],['救','jiù','🆘'],['助','zhù','🙏'],['保','bǎo','🛡️'],
+  ['健','jiàn','💪'],['护','hù','👩‍⚕️'],
+  // 24 春夏秋冬
+  ['春','chūn','🌸'],['夏','xià','☀️'],['秋','qiū','🍁'],['冬','dōng','❄️'],
+  ['雨','yǔ','🌧️'],['雪','xuě','☃️'],['风','fēng','🌬️'],['雷','léi','⛈️'],
+  ['电','diàn','⚡'],['冰','bīng','🧊'],
+  // 25 身边的人物
+  ['师','shī','👩‍🏫'],['警','jǐng','👮'],['察','chá','🚓'],['工','gōng','👷'],
+  ['农','nóng','👨‍🌾'],['兵','bīng','🪖'],['同','tóng','👦'],['伴','bàn','🧑‍🤝‍🧑'],
+  ['朋','péng','👫'],['友','yǒu','🤝'],
+  // 26 海边湖里
+  ['虾','xiā','🦐'],['贝','bèi','🐚'],['鲸','jīng','🐳'],['海','hǎi','🏞️'],
+  ['洋','yáng','🌊'],['沙','shā','🏖️'],['浪','làng','〰️'],['帆','fān','⛵'],
+  ['岛','dǎo','🏝️'],['湖','hú','🛶'],
+  // 27 运动场上
+  ['游','yóu','🏊'],['泳','yǒng','🏄'],['赛','sài','🏅'],['赢','yíng','🥇'],
+  ['输','shū','😖'],['球','qiú','⚽'],['步','bù','🚶'],['棒','bàng','🏏'],
+  ['网','wǎng','🥅'],['队','duì','👥'],
+  // 28 开心的不开心
+  ['喜','xǐ','😄'],['怒','nù','😠'],['哀','āi','😢'],['乐','lè','😃'],
+  ['爱','ài','❤️'],['怕','pà','😨'],['急','jí','😣'],['忙','máng','🏃'],
+  ['静','jìng','🤫'],['欢','huān','🎉'],
+  // 29 多与少 · 形状
+  ['多','duō','📈'],['少','shǎo','📉'],['老','lǎo','👴'],['男','nán','👦'],
+  ['女','nǚ','👧'],['尖','jiān','🔺'],['宽','kuān','📏'],['窄','zhǎi','📐'],
+  ['圆','yuán','⭕'],['弯','wān','〰️'],
+  // 30 天天用得上的动词
+  ['给','gěi','🤲'],['从','cóng','🚪'],['拿','ná','✋'],['放','fàng','📦'],
+  ['找','zhǎo','🔍'],['问','wèn','❓'],['答','dá','💬'],['送','sòng','🎁'],
+  ['抱','bào','🤗'],['推','tuī','👐'],
+  // 31 假期作业（老师手写卡片 49 字，2026-10-07 识别）
+  ['色','sè','🎨'],['毛','máo','🪶'],['可','kě','👌'],['兴','xīng','🎉'],['布','bù','🧵'],['正','zhèng','✔️'],['方','fāng','🧊'],  ['广','guǎng','🏫'],['平','píng','⚖️'],['什','shén','❓'],['么','me','❔'],['怎','zěn','❓'],['没','méi','💧'],['间','jiān','📦'],  ['回','huí','🔁'],['升','shēng','⬆️'],['告','gào','📢'],['众','zhòng','👥'],['森','sēn','🌲'],['吗','ma','❔'],['吧','ba','🗨️'],  ['呢','ne','🤔'],['啊','a','😮'],['呀','ya','🎈'],['啦','la','🎉'],['比','bǐ','⚖️'],['又','yòu','🔁']
+];
+/* 星球外形：圆 / 方 / 三角 / 星 / 六边 / 房子 / 汽车 / 树 / 云 / 心 / 菱 / 火箭 */
+var ZI_SHAPES = ['circle','square','tri','star','hex','house','car','tree','cloud','heart','diamond','rocket'];
+/* 12 组高饱和配色（亮面 → 暗面） */
+var ZI_COLORS = [
+  ['#ffe08a','#e39b1f'], ['#a9d8ff','#2f7fb5'], ['#ffc0dc','#d9487a'],
+  ['#b6f0b0','#2f9e5f'], ['#d4c4ff','#6c4fd6'], ['#ffc59c','#e2662a'],
+  ['#a9ecf0','#1f8f9c'], ['#fff2b0','#c9952b'], ['#c8f5dd','#2c8f6a'],
+  ['#f3c6ff','#9c3fbf'], ['#ffc9c9','#cf3b3b'], ['#dbe8ff','#3c6fd6']
+];
+/* 主题字指定外形，其余按字哈希分配 —— 每个字颜色形状都不一样 */
+var ZI_SHAPE_FIX = {
+  '家':'house','房':'house','屋':'house','院':'house','门':'house','窗':'house',
+  '车':'car','船':'car','机':'car','停':'car','飞':'rocket',
+  '树':'tree','花':'tree','草':'tree','叶':'tree','竹':'tree','禾':'tree','苗':'tree','林':'tree','枝':'tree','木':'tree',
+  '云':'cloud','好':'heart','日':'star','月':'circle','水':'cloud','火':'diamond','山':'hex',
+  '园':'cloud','公':'cloud','头':'heart',
+  '头':'heart','前':'star','长':'rocket','色':'diamond','中':'circle','毛':'cloud','可':'circle',
+  '本':'square','兴':'star','后':'hex','布':'square','年':'circle','今':'cloud',
+  '会':'heart','正':'square','方':'square','瓜':'circle','广':'house','平':'square',
+  '什':'star','么':'cloud','怎':'cloud','没':'cloud','间':'square','回':'circle',
+  '问':'cloud','升':'rocket','告':'star','从':'rocket','众':'hex','森':'tree',
+  '男':'circle','明':'star','吗':'cloud','吧':'cloud','呢':'cloud','啊':'cloud',
+  '呀':'cloud','啦':'cloud','米':'circle','比':'square','朋':'heart','友':'heart',
+  '又':'tri'
+};
+function hzHash(s){ var n=0; for(var i=0;i<s.length;i++) n=((n*131)+s.charCodeAt(i))>>>0; return n; }
+
+/* 多音字消歧：TTS 单字朗读没有上下文，会取「引擎默认读音」而读错。
+   这里给识字表里的多音字指定一个能消歧的双字词——朗读时读这个词，
+   孩子听到的是正确读音；屏幕上大字仍是单个汉字，下面一行是带调拼音。
+   只列确实会读错的字：发(fà≠fā)、只(zhī≠zhǐ)、乐(lè≠yuè)。 */
+var ZI_TS = {'发':'头发', '只':'一只', '乐':'快乐',/* 轻声字 / 多音字：朗读时读组词，否则引擎读成原调 */
+  '么':'什么','吗':'是吗','吧':'走吧','呢':'你呢','啊':'好啊','呀':'好呀','啦':'好啦','什':'什么','长':'长短','没':'没有','中':'中间','回':'回来'};
+
+/* 汉字本地音频包映射：汉字 -> audio/ 下的 ASCII 文件名（h + md5 前 8 位）。
+   303 个汉字/词全部离线预生成为 mp3，运行时直接播本地文件，
+   不再依赖浏览器 TTS，也不调用任何第三方在线合成接口——这是微信里也能出声的根本保证。 */
+var ZI_AUDIO = {'一':'h7941da94','七':'haad6914f','万':'h9d032066','三':'he662ff59','上':'haf767b7e','下':'h3850a186','不':'h9eba1ab6','东':'hd9ca5d6e','个':'h930882bb','中':'haed1dfbc','么':'hf20eff35','乐':'ha2705d7f','九':'h9b4851f8','书':'h2f3703e4','了':'h163773fb','二':'h2d8be272','云':'ha45fb6bb','五':'h1fcc29d0','人':'h465afe3c','什':'h3a7dc8e5','今':'hba4b5ed1','从':'h0cc05f42','他':'h5fe86c60','众':'hd877d132','会':'h647477bb','伴':'h33a9c0c0','你':'hdf1fd910','保':'hb553703b','停':'h87438613','健':'hb31314f9','兔':'hff5e0a15','入':'h4e6a4b28','八':'hedf1acd5','公':'h7d6c6b0e','六':'h61b45352','关':'hd58a55bc','兴':'h496c4a11','兵':'h31015c2f','写':'h4d7dc6c5','农':'h5ddab871','冬':'h5d6e3b1d','冰':'h15733c32','出':'h58f02106','刀':'h83f6c0da','前':'hd8cbd046','助':'hed7b6e1c','勺':'h9dd8b998','包':'h5442dfce','北':'h9e08f63a','医':'hc1fad4ce','十':'h18124572','千':'hc821e522','升':'h4caf8b40','午':'h1933b5e7','南':'h48029ea2','厚':'hba8c173b','去':'hdfb9366c','又':'h1689ddd7','叉':'ha50def5b','友':'hb75aa526','双':'hff8f4688','发':'h922e08ae','口':'hc9417574','只':'hf4a0476b','可':'h4aebcc5f','右':'h4d9c32c2','叶':'h066aab17','吃':'ha52b77df','同':'h49cd6e0a','后':'h2038d4ba','吗':'h2988084a','吧':'h9ff279f5','听':'h8cbe1c93','呀':'h4bdddbd2','告':'h11696f22','呢':'h65ac5a7b','周':'ha657f46f','哀':'h5fb44db5','哥':'hd8a297a6','哭':'h03464325','啊':'h04c16ff7','啦':'h19cfa682','喜':'h7adf3d7d','喝':'h57df2711','四':'h21716cf3','回':'he0a11316','园':'h097fcee0','圆':'hdfda0ded','土':'h06da773f','在':'h241d47a3','地':'h1ee506bf','坐':'h0169bebf','夏':'hd4b37c9f','多':'h7b1568e6','大':'hab18e30c','天':'h249aba76','头':'h4be2abbc','女':'h87c835a6','奶':'h0bf2ceb3','好':'hac2c8f13','妈':'h11148107','姐':'h05da6973','字':'ha95dbb0e','学':'h65f27a24','家':'ha6cdd2a0','宽':'hea5a1c75','察':'h3077abd6','小':'h391b8fa9','少':'hbd2282db','尖':'h91b9aafd','尺':'h977314f9','屋':'h9a117e2b','山':'h86fa9c82','岛':'h1ec268bb','工':'ha626497b','左':'hd2aff141','布':'hcfc2f013','帆':'h15f70b63','师':'h2928bba2','带':'h66e2b6ac','帽':'h8cac7515','平':'hf81ab586','年':'h465260fe','广':'h05483066','床':'h1696a596','开':'h84932056','弟':'h10b8e3ca','张':'h6499fc74','弯':'h568b73f4','忙':'h1c0a089e','怎':'h031534c3','怒':'h8a95a681','怕':'h93efc278','急':'h6da09b98','我':'h16815254','房':'h61c4260a','手':'h3c7d183f','扣':'haedc526b','找':'h0a4df2a5','把':'ha37a9be7','护':'h2a087a67','抱':'h1075ddb2','拿':'hc7f7acf5','推':'h615eb6d6','放':'hcedaabc9','救':'h4efd01ed','方':'hc26236c2','日':'h3edddd85','早':'hd6cb15b9','时':'h609b5f0a','明':'he647d10f','春':'hdd201928','昨':'hccbcdbcd','是':'h0a60ac8f','晚':'h9299aa7a','月':'he42b99d5','有':'hcc4ad2fd','朋':'h75767133','木':'he0a5e08a','本':'ha4fb8425','机':'h23a732e6','条':'hcc1bacb5','来':'hf7b0a3bd','杯':'h86296f5a','林':'h70c4b42a','果':'h2bbb3b39','枝':'hed2087f4','树':'h302f276a','桃':'h432c7765','桌':'h128b1e7c','桥':'h3e3c1513','梨':'h9213c6fc','棒':'hc71d2a67','森':'h0d9aeb6e','椅':'h73251581','橘':'hfaa5dda2','橙':'hb990b42b','欢':'h5654d79a','正':'h0f756c3f','步':'h4a0ff510','比':'hd6eea357','毛':'h6f74ec99','水':'heab619fb','汁':'hb38fd422','汤':'h9c6d2f2f','沙':'h08eec2c5','没':'h3672c6af','油':'hda82fdfc','泳':'h11f4f8dd','洋':'h962067f7','浪':'he15e41f2','海':'h9aa7f829','游':'he34cb018','湖':'h3849c239','火':'hdf3bbd52','灯':'h7ccb1378','灶':'h50e9ea40','熊':'h8df702f4','爱':'h8f743c2c','爷':'hcc607188','爸':'hab10119e','片':'hb26fc74c','牙':'hd582052b','牛':'ha933ef6a','狐':'hf8b9f2fa','狗':'h5090e44e','猪':'he4dc9ec1','猫':'hb655de68','猴':'h89510ab4','球':'h1b2527d8','瓜':'hcfec36ed','瓶':'h0c88bfc8','电':'h974899ef','男':'h36a4908a','画':'h2287851d','疼':'h47f18cd9','病':'he659182e','痛':'h1627e739','白':'h9b9a35c2','百':'h81ec89a2','的':'h01d7aa49','盐':'h983448e8','盘':'hff4efcaf','目':'h4064560f','看':'h9302446f','睡':'h0e7c928c','短':'hb58b94d8','矮':'h839cef97','石':'h87cc016a','碗':'he67f42e9','禾':'h86469aae','秋':'hfdf31ff3','窄':'h2c2d355b','窗':'h4bebe7c0','竹':'h50064b40','笑':'h1300f40c','笔':'h9fb4dafd','答':'h416f5354','算':'h0ffa26f7','米':'h8227e17a','粉':'h8bb6651f','糖':'ha0b763d8','紫':'h34e66c72','红':'hd088e652','纸':'hd17f4387','给':'h37186b95','绿':'h806c4388','网':'h6ebcee97','羊':'ha136f339','老':'h04837a0c','耳':'h78e4f46b','肉':'hf37896e6','能':'h9c047961','船':'h7def9ee0','色':'h9122c537','花':'h22dbba75','苗':'h61c08944','苹':'h7d7bc945','草':'h7d3cfe8c','药':'h60cb730b','菜':'h3ee77c8e','葡':'h6369a5de','蓝':'h2fc8da52','蕉':'h3779c485','薄':'hccfd0ae4','虎':'h5ccc31d2','虫':'haed37235','虾':'hf949b651','蛇':'h37e76c8a','蛋':'h96dabbb9','蛙':'h9ca5e313','街':'h39ca614f','衣':'h0cd16de4','袖':'hed6b0017','袜':'h7506c78e','裤':'h8a49f6c0','西':'hd62cb2a2','要':'h5438c873','警':'hd67835b0','说':'hddc9d3d1','读':'h75769d1a','豆':'h49823b10','象':'h175141b4','贝':'h26b41cbd','赛':'h35901227','赢':'hd5fad0d8','走':'h0154e79e','起':'h308fdfa0','足':'hfbb4674d','跑':'hc5032ff7','路':'hd047a27f','跳':'hf4965ce1','车':'h7fce1289','输':'h97acbb0c','送':'h040f3943','醒':'hbadaebd5','里':'hff875e90','钟':'h4d44cc97','锅':'hcd876ccb','长':'h092acb9c','门':'ha4960087','问':'h57fe12bf','间':'he04aa3f3','队':'h440c0841','院':'hbd3a0074','雨':'h95433763','雪':'hc4fccd8d','雷':'h65ad96da','青':'h1ca69c4b','静':'h861a7657','面':'hfd6a0e7d','鞋':'hdb695b39','领':'h987dc5d5','风':'hb2489198','飞':'ha8dd7133','饭':'h094f7310','饼':'hd2ed0a06','马':'h4e2572e0','高':'h4296d7d2','鱼':'h0857fa4e','鲸':'hfd7be996','鸟':'hcdd7ce48','鸡':'hef2712b1','鸭':'h3840579d','鹅':'hb301be8a','鹿':'hec485dc1','黄':'h12401e34','黑':'h9cba5857','鼓':'hc6a438ef','鼻':'habf53f44'};
+ZI.forEach(function(z){
+  var h=hzHash(z[0]);
+  PIN[z[0]] = {py:z[1], zi:z[0], say:z[0], em:z[2], kind:'zi',
+    shape: ZI_SHAPE_FIX[z[0]] || ZI_SHAPES[h % ZI_SHAPES.length],
+    ci: (h>>>5) % ZI_COLORS.length};
+});
+
+/* ---------- 2. 关卡 ----------
+   梯度：看图识字 → 单韵母 → 声母 → 复/鼻韵母 → 拼读(两步) → 声调挑战(三步) */
+var LEVELS = [
+  /* ---- 假期作业（老师手写卡片 49 字）放在最前面 ---- */
+  {name:'假期作业 · 假期第1天', type:'zi', hw:true, set:['前','长','公','色','中','毛','可','本','兴','后'],
+   tip:'老师手写卡片第 1 页。照着闪卡点一点，黑洞会把字念出来。'},
+  {name:'假期作业 · 假期第2天', type:'zi', hw:true, set:['布','年','今','会','正','方','瓜','广','平','禾'],
+   tip:'老师手写卡片第 2 页。认字的同时，注意每个字的形状和颜色都不一样。'},
+  {name:'假期作业 · 假期第3天', type:'zi', hw:true, set:['什','么','怎','没','间','回','问','升','告','从'],
+   tip:'老师手写卡片第 3 页。这一页多音字和轻声字比较多，跟着听。'},
+  {name:'假期作业 · 假期第4天', type:'zi', hw:true, set:['众','森','男','林','明','吗','吧','呢','啊','呀'],
+   tip:'老师手写卡片第 4 页。三个木就是「森」，三个人是「众」，多看几眼就记住了。'},
+  {name:'假期作业 · 假期第5天', type:'zi', hw:true, set:['啦','米','比','朋','船','友','飞','车','又'],
+   tip:'老师手写卡片第 5 天。全部 49 个字的最后一页，认完就完成假期作业啦！'},
+
+  {name:'识字01 · 日月的火', type:'zi', set:['日','月','水','火','山','石','土','天','地','云'],
+   tip:'照着图点一点，黑洞会把这个字念出来。认完 10 个字就过关！'},
+  {name:'识字02 · 我的家人', type:'zi', set:['爸','妈','爷','奶','我','你','他','哥','姐','弟'],
+   tip:'点一下，听听家里人的称呼怎么读。'},
+  {name:'识字03 · 我的身体', type:'zi', set:['人','口','手','足','目','耳','头','牙','鼻','发'],
+   tip:'指着自己身上的地方点，边点边认。'},
+  {name:'识字04 · 大小上下', type:'zi', set:['大','小','上','下','中','前','后','左','右','里'],
+   tip:'认方位字：上、下、前、后、左、右、里。'},
+  {name:'识字05 · 牛羊猫狗', type:'zi', set:['牛','羊','马','鸟','鱼','虫','猫','狗','兔','鸡'],
+   tip:'先读字，再学着学叫叫看！'},
+  {name:'识字06 · 山里跑的', type:'zi', set:['猪','猴','象','虎','熊','鸭','鹅','鹿','蛇','蛙'],
+   tip:'这些是野生动物，跟着念两遍。'},
+  {name:'识字07 · 花草树木', type:'zi', set:['花','草','树','叶','竹','禾','苗','林','枝','木'],
+   tip:'外面的植物长什么样，点开看看。'},
+  {name:'识字08 · 七彩颜色', type:'zi', set:['红','绿','蓝','白','黑','黄','紫','粉','橙','青'],
+   tip:'指一指教室里这个颜色的东西。'},
+  {name:'识字09 · 吃的', type:'zi', set:['米','饭','面','菜','肉','蛋','汤','饼','糖','盐'],
+   tip:'看看午餐里认识几个字。'},
+  {name:'识字10 · 瓜果豆', type:'zi', set:['瓜','果','苹','梨','桃','蕉','葡','橘','汁','豆'],
+   tip:'水果店里的字，认一认。'},
+  {name:'识字11 · 车船飞机', type:'zi', set:['车','船','机','飞','路','桥','停','街','公','园'],
+   tip:'出门坐车会用到这些字。'},
+  {name:'识字12 · 房子家里', type:'zi', set:['房','屋','家','门','窗','床','桌','椅','灯','院'],
+   tip:'这是我家，认认家里有什么。'},
+  {name:'识字13 · 读书写字', type:'zi', set:['笔','本','纸','画','字','学','读','写','算','尺'],
+   tip:'上学要用的东西，先认一半。'},
+  {name:'识字14 · 一二三四', type:'zi', set:['一','二','三','四','五','六','七','八','九','十'],
+   tip:'数一数，伸出手指比划着念。'},
+  {name:'识字15 · 多少个', type:'zi', set:['百','千','万','个','只','条','张','把','双','片'],
+   tip:'量词：一只猫、一条鱼、一把椅。'},
+  {name:'识字16 · 早午晚', type:'zi', set:['早','晚','午','今','昨','明','年','周','时','钟'],
+   tip:'一天里会用到的时间字。'},
+  {name:'识字17 · 走走看看', type:'zi', set:['走','跑','跳','看','听','说','吃','喝','笑','哭'],
+   tip:'做动作猜字，边玩边记。'},
+  {name:'识字18 · 每天做的', type:'zi', set:['坐','起','睡','醒','来','去','出','入','开','关'],
+   tip:'起床、出门、开关门 —— 都在这一组。'},
+  {name:'识字19 · 东南西北', type:'zi', set:['东','西','南','北','高','矮','长','短','厚','薄'],
+   tip:'会认方向啦，真棒。'},
+  {name:'识字20 · 天天在说', type:'zi', set:['好','是','有','在','的','了','不','会','要','能'],
+   tip:'最后 10 个是说话最常用的字，一定要会。'},
+  {name:'识字21 · 穿在身上', type:'zi', set:['衣','鞋','袜','帽','裤','领','袖','扣','带','包'],
+   tip:'早上穿衣服、系鞋带，认一认穿在身上的字。'},
+  {name:'识字22 · 厨房餐具', type:'zi', set:['锅','碗','勺','叉','杯','盘','刀','灶','油','瓶'],
+   tip:'吃饭用的东西，指指着碗筷念一遍。'},
+  {name:'识字23 · 医院健康', type:'zi', set:['医','病','药','疼','痛','救','助','保','健','护'],
+   tip:'看病打针会用到的字，妈妈带你去时指认一下。'},
+  {name:'识字24 · 春夏秋冬', type:'zi', set:['春','夏','秋','冬','雨','雪','风','雷','电','冰'],
+   tip:'一年四个季节，外面下雨下雪时拿出来认最牢。'},
+  {name:'识字25 · 身边的人物', type:'zi', set:['师','警','察','工','农','兵','同','伴','朋','友'],
+   tip:'说说你身边都有谁：老师、警察、爸爸的同事…'},
+  {name:'识字26 · 海边湖里', type:'zi', set:['虾','贝','鲸','海','洋','沙','浪','帆','岛','湖'],
+   tip:'去过海边吗？浪花、小岛、帆船都在这一组。'},
+  {name:'识字27 · 运动场上', type:'zi', set:['游','泳','赛','赢','输','球','步','棒','网','队'],
+   tip:'踢球、游泳、赛跑 —— 赢了输了都要认识这几个字。'},
+  {name:'识字28 · 开心不开心', type:'zi', set:['喜','怒','哀','乐','爱','怕','急','忙','静','欢'],
+   tip:'心情也有名字哦，说说你现在高不高兴。'},
+  {name:'识字29 · 多和少 · 形状', type:'zi', set:['多','少','老','男','女','尖','宽','窄','圆','弯'],
+   tip:'多少、方圆 —— 生活中到处都是反义词。'},
+  {name:'识字30 · 天天用的动词', type:'zi', set:['给','从','拿','放','找','问','答','送','抱','推'],
+   tip:'会动的字：给、拿、放、找，做一个动作认一个字。'},
+  {name:'单韵母六兄弟', type:'free', set:['a','o','e','i','u','ü'],
+   tip:'六个单韵母，挨个点一遍，听听它们都怎么读。'},
+  {name:'声母小队 b p m f', type:'free', set:['b','p','m','f'],
+   tip:'读声母时要又轻又短：玻、坡、摸、佛。'},
+  {name:'声母小队 d t n l', type:'free', set:['d','t','n','l'],
+   tip:'得、特、讷、勒 —— 舌尖顶住上牙床。'},
+  {name:'声母小队 g k h', type:'free', set:['g','k','h'],
+   tip:'哥、科、喝 —— 舌根抬起来。'},
+  {name:'声母小队 j q x', type:'free', set:['j','q','x'],
+   tip:'鸡、七、西 —— 舌面贴住硬腭。'},
+  {name:'翘舌音 zh ch sh r', type:'free', set:['zh','ch','sh','r'],
+   tip:'知、吃、诗、日 —— 舌尖卷起来。'},
+  {name:'平舌音 z c s y w', type:'free', set:['z','c','s','y','w'],
+   tip:'资、次、思、衣、乌 —— 舌尖放平。'},
+  {name:'复韵母乐园', type:'free', set:['ai','ei','ui','ao','ou','iu','ie','üe','er'],
+   tip:'两个单韵母手拉手，读的时候要连起来滑过去。'},
+  {name:'鼻韵母乐园', type:'free', set:['an','en','in','un','ün','ang','eng','ing','ong'],
+   tip:'结尾带上鼻音 -n 或 -ng。'},
+  {name:'拼读 · 家人动物', type:'spell', tone:false, tasks:[
+    {sm:'m', ym:'a', t:1, zi:'妈', em:'👍'},
+    {sm:'b', ym:'a', t:4, zi:'爸', em:'👨'},
+    {sm:'m', ym:'a', t:3, zi:'马', em:'🐴'},
+    {sm:'d', ym:'a', t:4, zi:'大', em:'🐘'},
+    {sm:'t', ym:'u', t:4, zi:'兔', em:'🐰'},
+    {sm:'j', ym:'i', t:1, zi:'鸡', em:'🐔'},
+    {sm:'zh', ym:'u', t:1, zi:'猪', em:'🐷'},
+    {sm:'l', ym:'u', t:4, zi:'鹿', em:'🦌'}
+  ], tip:'先看声母，再看韵母，两个一合就是汉字（这一关先不考声调哦）。' },
+  {name:'拼读 · 吃喝出行', type:'spell', tone:false, tasks:[
+    {sm:'ch', ym:'i', t:1, zi:'吃', em:'🍜'},
+    {sm:'h',  ym:'e', t:1, zi:'喝', em:'🥤'},
+    {sm:'ch', ym:'e', t:1, zi:'车', em:'🚗'},
+    {sm:'sh', ym:'u', t:1, zi:'书', em:'📖'},
+    {sm:'h',  ym:'u', t:2, zi:'狐', em:'🦊'},
+    {sm:'m',  ym:'ao',t:1, zi:'猫', em:'🐱'},
+    {sm:'g',  ym:'ou',t:3, zi:'狗', em:'🐶'},
+    {sm:'n',  ym:'iu',t:2, zi:'牛', em:'🐮'}
+  ], tip:'两个一起喂给黑洞，就变成汉字啦（先不考声调）。'},
+  {name:'拼读 · 声调挑战', type:'spell', tone:true, tasks:[
+    {sm:'h',  ym:'u', t:3, zi:'虎', em:'🐯'},
+    {sm:'n',  ym:'ü', t:3, zi:'女', em:'👧'},
+    {sm:'l',  ym:'ü', t:4, zi:'绿', em:'🟢'},
+    {sm:'b',  ym:'ai',t:2, zi:'白', em:'⚪'},
+    {sm:'h',  ym:'ei',t:1, zi:'黑', em:'🖤'},
+    {sm:'g',  ym:'u', t:3, zi:'鼓', em:'🥁'},
+    {sm:'p',  ym:'ao',t:3, zi:'跑', em:'🏃'},
+    {sm:'h',  ym:'ong',t:2,zi:'红', em:'🔴'}
+  ], tip:'到最后一关才要选声调：声母 → 韵母 → 声调 = 汉字。n、l 遇到 ü 要保留两点哦。'}
+];
+/* 内容难度分层（必须写在数组“之后”：塞进字面量里会在构造过程中抛错，整段脚本都跑不起来）
+   识字 01-10 启蒙 ★，11-20 巩固 ★★，21-30 提升 ★★★；拼音自由关中等，拼读关最高。 */
+LEVELS.forEach(function(L,i){
+  if(L.type==='zi')         L.diff = (i<10?1 : i<20?2 : 3);
+  else if(L.type==='spell') L.diff = 3;
+  else                      L.diff = 2;
+});
+function diffStar(d){ return d===1?'★':(d===2?'★★':'★★★'); }
+function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'提升')); }
+
+/* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
+    「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
+var BUILD = 'v7';
+/* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
+   一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
+   导出进度时改走「长按复制文本」，避免那条提示。 */
+var IS_WX = /MicroMessenger/i.test(navigator.userAgent || '');
+
+/* ---------- 3. 发音引擎 TTS：本机中文语音（失败自动降级在线合成） ---------- */
+var Voice = {
+  ok:false, voice:null, state:'检测中', tried:false,
+  /* 微信 / QQ 内置浏览器（X5 内核）最常见的坑：getVoices() 里明明有中文语音条目，
+     但 speak() 静默失败——既不出声也不报错。所以必须区分「有条目」和「真的出过声」。
+     zhState: unknown=还没结论 | good=实测出过声 | bad=实测不出声 */
+  zhState:'unknown', probeRun:false,
+  lastTry:0, lastText:'', relayedAt:0, relayedText:'',   // 同句去重：防止 TTS / 在线合成 / 补读三路抢着出声
+  payPending:true,                                       // 当前这句是否还欠一次在线补位
+  works:function(){ return this.zhState==='good'; },     // 本机中文语音确实会出声吗
+  init:function(){
+    var self=this;
+    if(!('speechSynthesis' in window)){
+      self.state='浏览器不支持本机语音，将自动使用在线合成音';
+      self.ok=false; self.paint(); return;
+    }
+    function pick(){ self.ensure(); self.paint(); }
+    pick();
+    try{ speechSynthesis.onvoiceschanged = pick; }catch(e){}
+    // 中文音色在不少内核里是异步后才出现的（微信/X5 尤其明显），多探几次
+    [200,600,1200,2500,4500,8000].forEach(function(t){ setTimeout(pick,t); });
+    setTimeout(function(){ self.probe(); }, 900);   // 实测一次，尽早拿到「到底出不出声」的结论
+  },
+  /* 探针：真送一次本机中文语音，看它到底出不出声。
+     静默失败（不报错、也不 onstart）是最坑的，只能靠超时判定。 */
+  probe:function(){
+    if(this.probeRun || this.zhState==='good' || !('speechSynthesis' in window)) return;
+    this.probeRun=true;
+    var self=this, done=false, isProbe=true, zi=true;   // 探针句是汉字「啊」，汉字口径处理
+    try{
+      try{ speechSynthesis.cancel(); }catch(e){}
+      var v=this.ensure();
+      if(!v){ this.zhState='bad'; this.state='本机没有中文语音，汉字自动使用在线合成音'; self.paint(); return; }
+      var u=new SpeechSynthesisUtterance('啊');
+      u.lang='zh-CN'; u.rate=0.9; u.volume=1;
+      if(v) u.voice=v;
+      u.onstart=function(){ if(!done){ done=true; self.zhState='good'; self.state='发音引擎已就绪：'+self.voice.name; self.paint(); } };
+      u.onerror=function(){
+        if(done) return; done=true;
+        var e=String(((u.error&&u.error)||'')+'');
+        /* not-allowed / interrupted 之类通常是「还没被用户手势解锁」（微信里先点一下页面就好），
+           不能据此判死 TTS，否则孩子永远只能用在线合成音。 */
+        if(zi && !/not-allowed|interrupted|canceled|audio-busy/i.test(e)){ self.zhState='bad'; self.paint(); }
+        /* probe() 作用域里没有 txt/rate 变量（探针句固定为「啊」、rate 0.9），
+           原先直接引用会抛 ReferenceError: txt is not defined —— 一旦本机 TTS 探针
+           走到 onerror（如 headless / 无声卡环境），整条补位链就断了。 */
+        self.needRelay('啊', 0.9, zi);
+      };
+      speechSynthesis.speak(u);
+      setTimeout(function(){            // 静默失败：等 1.2s 还没 onstart，判为不出声
+        if(isProbe && !done){ done=true; self.zhState='bad';
+          self.state='本机语音在当前浏览器不出声（多为微信内置浏览器限制），汉字自动使用在线合成音'; self.paint(); }
+      }, 1200);
+    }catch(e){ this.zhState='bad'; this.state='本机语音不可用，汉字自动使用在线合成音'; this.paint(); }
+  },
+  paint:function(){
+    var el=document.getElementById('voiceState');
+    if(el) el.textContent = this.state + (this.ok?'':'（将自动改用在线合成音；用 Edge / Chrome 可启用本机中文语音）');
+  },
+  ensure:function(){                       // 每次朗读前复查，别用 Init 时的一次性结论
+    var vs=[];
+    try{ vs = speechSynthesis.getVoices()||[]; }catch(e){ vs=[]; }
+    var zh=vs.filter(function(v){ return /zh|CN|Chinese|中文/i.test((v.lang||'')+' '+(v.name||'')); });
+    if(!zh.length) return null;
+    this.voice = zh.filter(function(v){return /female|yaoyao|huihui|xiaoxiao|ting|婷|女|晓|mei|美/i.test(v.name||'');})[0] || zh[0];
+    if(!this.ok){ this.ok=true; this.state='发音引擎已就绪：'+this.voice.name; }
+    return this.voice;
+  },
+  speak:function(text, rate){
+    if(!S.voiceOn || !text) return;
+    var self=this, started=false, txt=String(text);
+    // 同一句 150ms 内不重复送 TTS：cancel+speak 立刻再来一次会被内核当垃圾丢弃
+    var now=Date.now();
+    if(txt===this.lastText && now-this.lastTry<150) return;
+    this.lastText=txt; this.lastTry=now;
+    var zi = /[\u4e00-\u9fa5]/.test(txt.charAt(0));
+    this.payPending = true;                       // 这一句允许补位一次（下面的闸门会消费掉）
+    if(!('speechSynthesis' in window)){ this.needRelay(txt, rate, zi); return; }
+    try{
+      try{ speechSynthesis.cancel(); }catch(e){}
+      var v=this.ensure();
+      var u=new SpeechSynthesisUtterance(txt);
+      u.lang='zh-CN'; u.rate=rate||0.82; u.pitch=1.05; u.volume=1;
+      if(v) u.voice=v;
+      u.onstart=function(){ started=true; self.tried=true; if(zi) self.zhState='good'; };
+      u.onerror=function(){
+        if(started) return;
+        self.tried=true;
+        var e=String(((u.error&&u.error)||'')+'');
+        if(zi && !/not-allowed|interrupted|canceled|audio-busy/i.test(e)) self.zhState='bad';
+        self.needRelay(txt, rate, zi);
+      };
+      speechSynthesis.speak(u);
+      /* 兜底：有些内核 speak() 不报错但根本不出声，超时后切在线合成。
+         汉字（识字关）必须给本机中文语音足够启动时间——真机首次朗读常 >420ms 才 onstart，
+         抢太早就会「在线音 + TTS」两路叠在一起，听着就是一片“滴滴”。 */
+      setTimeout(function(){ if(!started) self.needRelay(txt, rate, zi); }, zi?1100:420);
+    }catch(e){ this.needRelay(txt, rate, zi); }
+  },
+  /* 补位闸门：catch / onerror / 超时定时器 / assertVoice 四条兜底通道都走这里，
+     一句（一次点击）只允许真正补一次在线合成，否则会连播好几轮 = 一片“滴滴”。 */
+  needRelay:function(txt, rate, zi){
+    if(!this.payPending) return;
+    this.payPending = false;
+    this.relay(txt, rate, zi);
+  },
+  relay:function(text, rate, zi){          // 本机语音不可用 / 不出声 -> 在线合成
+    if(!S.voiceOn || !text) return;
+    var now=Date.now(), txt=String(text);
+    if(zi) txt = ZI_TS[txt] || txt;        // 在线合成读双字词才不会读错多音字
+    if(Sound.bad[txt]) return;
+    // 汉字：只有实测确认本机中文语音真的会出声，才信它、不抢；
+    // 否则（典型：微信 X5 有中文条目但静默不出声）必须补在线合成，不然孩子点一个字一声都没有。
+    if(zi && this.works()) return;
+    // 补位去重：一次点击最多补一次在线合成。三条兜底通道（420/1100/560ms）共用，
+    // 不去重就会连播好几轮，听起来就是一片“滴滴”。
+    if(now - this.relayedAt < 1800) return;
+    if(txt===this.relayedText && now - this.relayedAt < 3000) return;
+    this.relayedAt=now; this.relayedText=txt;
+    try{
+      Sound.goOnline(text);
+    }catch(e){ Sound.bad[text]=1; }
+  }
+};
+
+/* ---------- 3.5 发音出口：本地音频包 -> 在线接口 -> 本机语音 ---------- */
+function akey(s){ return String(s).replace(/\u00fc/g,'v'); }   // u00fc(ü) -> v，文件名安全
+var Sound = {
+  base:'audio/', cache:{}, bad:{}, cur:null, unlocked:false, lastSaid:0,
+  online:function(t){ return 'https://fanyi.baidu.com/gettts?lan=zh&text='+encodeURIComponent(t)+'&spd=2&source=web'; },
+  file:function(key){ return this.base + akey(key) + '.mp3?v=' + BUILD; },
+  ziFile:function(zi){ var n=ZI_AUDIO[zi]; return n ? (this.base + n + '.mp3?v=' + BUILD) : ''; },
+  warm:function(keys){ // 关卡开始前预下载，点击后立刻出声
+    var self=this;
+    (keys||[]).forEach(function(k){
+      if(!k) return;
+      // 汉字：预取本地音频包（离线预生成，100% 有声）；万一缺包再退回在线合成
+      if(/[\u4e00-\u9fa5]/.test(String(k).charAt(0))){
+        var f=self.ziFile(k);
+        if(f){ var za=new Audio(); za.preload='auto'; za.oncanplay=function(){ self.cache[k]=za; }; za.onerror=function(){ self.bad[k]=1; }; za.src=f; za.load(); return; }
+        self.pre(self.online(ZI_TS[k]||k)); return;
+      }
+      if(self.cache[k] || self.bad[k]) return;
+      var a=new Audio(); a.preload='auto';
+      a.oncanplay=function(){ self.cache[k]=a; };
+      a.onerror=function(){ self.bad[k]=1; };
+      a.src=self.file(k); a.load();
+    });
+  },
+  pre:function(url){ try{ var a=new Audio(); a.preload='auto'; a.src=url; }catch(e){} },
+  unlock:function(){ // 移动端首次点击解锁音频播放
+    if(this.unlocked) return; this.unlocked=true;
+    try{
+      var a=new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+      var pr=a.play(); if(pr&&pr.catch) pr.catch(function(){});
+    }catch(e){}
+  },
+  say:function(text, key){
+    if(!S.voiceOn || !text) return;
+    var self=this, id=key||text, t=String(text||id);
+    this.lastSaid=Date.now();
+    Voice.payPending=false;      // 本次走的是本地/在线音频包，不欠在线合成这一环
+    // 汉字 = 识字关星球 / 拼读结果。走本地音频包（离线预生成的 mp3）：
+    // 不依赖浏览器 TTS，也不调第三方在线接口——微信/QQ 内置浏览器里也保证一点就响。
+    if(/[\u4e00-\u9fa5]/.test(String(id).charAt(0))){
+      if(this.cache[id] && !this.bad[id]){ this.go(this.cache[id]); return; }
+      var self2=this, zf=this.ziFile(id), ze=new Audio();
+      ze.preload='auto';
+      ze.oncanplay=function(){ self2.cache[id]=ze; };
+      ze.onerror=function(){                    // 本地包缺失（极少见）-> 在线合成 -> 本机语音
+        self2.bad[id]=1; self2.goOnline(ZI_TS[t] || t);
+      };
+      ze.src=zf; this.go(ze);
+      return;
+    }
+    if(this.cache[id] && !this.bad[id]){ this.go(this.cache[id]); return; }
+    var el=new Audio(); el.preload='auto';
+    el.oncanplay=function(){ self.cache[id]=el; };
+    el.onerror=function(){                       // 本地缺失 -> 在线合成
+      var e2=new Audio();
+      e2.oncanplay=function(){ self.cache[id]=e2; };
+      e2.onerror=function(){ Voice.speak(text, 0.75); };   // 再不行 -> 本机语音
+      e2.src=self.online(text);
+      self.go(e2);
+    };
+    el.src=this.file(id);
+    this.go(el);
+  },
+  /* 汉字专用出口：直接走在线合成音（不依赖本机 TTS，任何浏览器都能响）。
+     读的是「多音字双字词」，比如 发->头发、只->一只、乐->快乐，保证读音对。 */
+  goOnline:function(word){
+    if(!S.voiceOn) return;
+    var w=String(word), a=new Audio(this.online(w)), beat=false;
+    a.oncanplay=function(){ if(beat) return; beat=true; Sound.go(a); };
+    a.onerror=function(){ if(beat) return; beat=true; Sound.bad[w]=1; };
+    a.preload='auto'; a.load();
+  },
+  go:function(el){
+    if(this.cur && this.cur!==el){ try{ this.cur.pause(); this.cur.currentTime=0; }catch(e){} }
+    this.cur=el;
+    try{ el.currentTime=0; var pr=el.play(); if(pr&&pr.catch) pr.catch(function(){}); }catch(e){}
+  },
+  /* 发声保险：被黑洞吃掉之后，如果既没在说话也没在放音频，就直接 TTS 补读一次。
+     stamp 用来避免“后一次 say 已经接手”时旧定时器重复读两遍。 */
+  assertVoice:function(text, rate){
+    var self=this, stamp=this.lastSaid;
+    setTimeout(function(){
+      try{
+        if(!S.voiceOn || !text || self.lastSaid!==stamp) return;
+        var talking=false;
+        try{ if('speechSynthesis' in window && (speechSynthesis.speaking||speechSynthesis.pending)) talking=true; }catch(e){}
+        if(talking) return;
+        if(self.cur){ try{ if(self.cur.currentTime>0.05 && !self.cur.paused) talking=true; }catch(e){} }
+        if(talking) return;
+        /* 汉字：已经交给 TTS（含它自己的 1.1s 在线兜底），这里绝不插第二遍 TTS，
+           否则一次点击会同时响「在线合成 + 本机语音」两路。
+           只有本机确实没有中文音色时，才让在线合成补位（relay 内部还有 1.4s 去重）。 */
+        if(/[\u4e00-\u9fa5]/.test(String(text).charAt(0))){
+          /* 汉字现在走本地音频包，上面 cur 播放中就会被 talking 拦住。
+             真的连本地包都没响（极少见），才退回在线合成补位，避免留白。 */
+          if(!talking && !self.cache[text] && !ZI_AUDIO[text]) Voice.needRelay(ZI_TS[text]||text, rate||0.85, true);
+          return;
+        }
+        Voice.speak(text, rate||0.85);
+      }catch(e){}
+    }, 560);
+  }
+};
+
+/* ---------- 3.6 缓存清理：微信 / QQ 内置浏览器缓存极硬 ----------
+   微信里同一条链接可能把旧版 index.html 和旧 audio/*.mp3 缓存好几周，
+   光在服务器上覆盖文件是不够的，客户端根本不会重新来请求。
+   这里提供两条路：① 本页清缓存后带版本号重新加载；② 复制一条全新链接发群里，
+   别人点开是全新 URL，100% 拿到最新版。学习进度存在 localStorage，两种操作都不会丢。 */
+function pageURL(v){ return location.origin + location.pathname + (v ? ('?v=' + v) : ''); }
+function clearCacheThenReload(){
+  var n=0;
+  try{                                   // 清 Cache API（微信 X5 会用它缓存整页）
+    if(window.caches && caches.keys){
+      caches.keys().then(function(ks){
+        ks.forEach(function(k){ try{ caches.delete(k); n++; }catch(e){} });
+      });
+    }
+  }catch(e){}
+  try{ if(window.applicationCache && applicationCache.update) applicationCache.update(); }catch(e){}
+  try{ localStorage.removeItem('bhpy_cache_ver'); }catch(e){}
+  try{ location.replace(pageURL(BUILD + '-r' + (Date.now() % 100000))); }catch(e){}
+  try{ location.href = pageURL(BUILD + '-r' + (Date.now() % 100000)); }catch(e){}
+}
+function copyNewLink(){
+  var u = pageURL(BUILD), done = function(ok){
+    alert((ok ? '已复制最新版本链接：\n\n' : '请长按地址栏复制这个链接：\n\n')
+      + u + '\n\n把这个新链接发到微信群，家长和孩子点开就是最新版，不受手机缓存影响。');
+  };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(u).then(function(){ done(true); }, function(){ legacy(); });
+      return;
+    }
+  }catch(e){}
+  legacy();
+  function legacy(){                     // 无 clipboard API（微信内置浏览器常见）：老办法 fallback
+    var ta=document.createElement('textarea');
+    ta.value=u; ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,u.length);
+    var ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta); done(ok);
+  }
+}
+
+/* ---------- 4. 音效（Web Audio 合成，无需素材） ---------- */
+var Sfx = {
+  ctx:null,
+  ac:function(){
+    if(!this.ctx){ var C=window.AudioContext||window.webkitAudioContext; if(!C) return null; this.ctx=new C(); }
+    if(this.ctx.state==='suspended') this.ctx.resume();
+    return this.ctx;
+  },
+  tone:function(freq,dur,type,gain,delay){
+    if(!S.sfxOn) return; var ac=this.ac(); if(!ac) return;
+    var t0=ac.currentTime+(delay||0);
+    var o=ac.createOscillator(), g=ac.createGain();
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,t0);
+    g.gain.setValueAtTime(0,t0);
+    g.gain.linearRampToValueAtTime(gain||0.12,t0+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+(dur||0.2));
+    o.connect(g); g.connect(ac.destination); o.start(t0); o.stop(t0+(dur||0.2)+0.05);
+  },
+  // 吞噬：噪声 + 下扫滤波
+  swallow:function(){
+    if(!S.sfxOn) return; var ac=this.ac(); if(!ac) return;
+    var dur=0.55, t0=ac.currentTime;
+    var len=Math.floor(ac.sampleRate*dur), buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+    for(var i=0;i<len;i++){ d[i]=(Math.random()*2-1)*(1-i/len); }
+    var src=ac.createBufferSource(); src.buffer=buf;
+    var f=ac.createBiquadFilter(); f.type='bandpass'; f.Q.value=2.5;
+    f.frequency.setValueAtTime(1800,t0); f.frequency.exponentialRampToValueAtTime(160,t0+dur);
+    var g=ac.createGain(); g.gain.setValueAtTime(0.22,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t0);
+    this.tone(90,0.4,'sine',0.09,0);
+  },
+  win:function(){ [523,659,784,1047].forEach(function(f,i){ Sfx.tone(f,0.28,'triangle',0.13,i*0.09); }); },
+  star:function(){ [784,1047].forEach(function(f,i){ Sfx.tone(f,0.22,'sine',0.12,i*0.08); }); },
+  nope:function(){ this.tone(300,0.16,'sawtooth',0.07,0); this.tone(220,0.2,'sawtooth',0.06,0.12); },
+  click:function(){ this.tone(520,0.07,'square',0.05,0); }
+};
+
+/* ---------- 5. 全局状态 ---------- */
+var S = {
+  scene:'start',
+  li:0, level:null,
+  planets:[], bh:null, bgStars:[], parts:[],
+  ti:0, step:0,            // spell 关：任务序号 / 0声母 1韵母 2声调
+  got:null,                // 已拼部分
+  eaten:{},                // free/zi 关已吃掉
+  hint:'', hintT:0,
+  voiceOn:true, sfxOn:true, showZi:true, hintOn:true,
+  shakeT:0, flash:0,
+  lvToken:0, pTimers:[],   // 关卡令牌 + 本关挂起的延时任务（切关时统一作废）
+  floats:[],               // 上浮飘字（⭐+1 / 太棒了 ×N）
+  combo:0, comboT:0,       // 连击：连续答对次数 + 计时窗口
+  winT:0,                  // 通关烟花剩余时间
+  prog:null
+};
+/* ---------- 5b. 难度分层 ----------
+   两条线：
+   ① 内容分层：识字关自带星级（01-10 启蒙 ★ / 11-20 巩固 ★★ / 21-30 提升 ★★★，拼读关最高）；
+   ② 手感分层：老师/家长在设置里选「轻松 / 标准 / 挑战」，实时影响星球大小、黑洞速度、点错惩罚、提示高亮。 */
+var DIFF = {
+  1:{emo:'🐣', name:'轻松', spd:0.35,  rk:1.18, pen:0.55, hint:true,  desc:'星球大、黑洞慢慢飞、点错很快就回来'},
+  2:{emo:'🐤', name:'标准', spd:0.02,  rk:1,    pen:1,    hint:true,  desc:'正常节奏，推荐每天练一关'},
+  3:{emo:'🦅', name:'挑战', spd:0.0025,rk:0.86, pen:1.7,  hint:false, desc:'星球小、黑洞特别快、点错要等一等'}
+};
+function diffOn(){ return DIFF[S.prog.diff] || DIFF[2]; }
+function bumpErr(id){ if(!id) return; S.prog.err[id]=(S.prog.err[id]||0)+1; saveProg(); }
+function loadProg(){
+  try{ var p=JSON.parse(localStorage.getItem('bhpy_prog')||'{}'); }catch(e){ var p={}; }
+  p.passed = p.passed||{}; p.stars = p.stars||0; p.known = p.known||{};
+  p.err = p.err||{};                 // 记录每个字/拼音被点错的次数，给家长端看薄弱环节
+  p.seenTut = !!p.seenTut;           // 是否看过新手引导（清空记录后变 false → 可重看）
+  if(!DIFF[p.diff]) p.diff = 2;
+  return p;
+}
+function saveProg(){ try{ localStorage.setItem('bhpy_prog', JSON.stringify(S.prog)); }catch(e){} }
+S.prog = loadProg();
+
+/* ---------- 6. 画布 ---------- */
+var cv=document.getElementById('stage'), ctx=cv.getContext('2d');
+var W=0,H=0,DPR=1;
+
+/* iPad 横屏「显示不全」的根因与修法（2026-10-07）
+   ------------------------------------------------------------------
+   症状：iPad Safari / 微信 WebView 横屏打开，卡片全挤在屏幕顶部一条窄带里，
+        下方大片空白，看起来像「画布只显示了上半屏」。
+
+   根因：旧版 resize() 把 canvas 尺寸写成  H = min(clientHeight, innerHeight,
+        visualViewport.height, documentElement.clientHeight)。
+        这 4 个来源在 iPad 上并不一致 —— documentElement.clientHeight 在横屏/
+        桌面模式下常返回**上一帧甚至竖屏的陈旧值**（实测可返回 390 而真实视口 820）。
+        Math.min() 只要碰到一个坏值就把整个高度拉低：820 的视口被算成 390，
+        场地高度只剩 170px，只够铺 1.6 行卡片 → 卡片挤成一条带，下方全空。
+        更糟的是 cv.style.height 被写死后，下一帧 cv.clientHeight 读到的就是这个
+        坏值，与其它来源再取 min，形成**自锁死循环**，画布再也长不回来。
+
+   修法：
+     ① 以 canvas 自身 getBoundingClientRect() 为唯一权威尺寸。
+        #stage 是 position:fixed;width:100%;height:100%，浏览器布局完成后
+        它的 rect 就是真实可视区，不依赖任何内核「自报」的视口高度。
+     ② 其它来源只在 rect 不可用（首帧布局未完成）时才作为兜底，
+        且取 min 的语义仅限于「宁可小不可溢出」，绝不让单个坏值主导尺寸。
+     ③ 加合理性下限：算出的高度若明显小于视口（差 >80px），判定为坏值并回退，
+        避免任何内核再把画布锁死。 */
+
+/* 取可信的视口尺寸：优先 rect，其次 rect 自身尺寸，最后才用内核自报值兜底 */
+function measure(){
+  var rect=null;
+  try{ rect=cv.getBoundingClientRect(); }catch(e){}
+  var rw=rect? Math.round(rect.width||0) :0;
+  var rh=rect? Math.round(rect.height||0) :0;
+  var cw=Math.round(cv.clientWidth||0), ch=Math.round(cv.clientHeight||0);
+  // rect 与 clientWidth/clientHeight 同源（元素真实渲染尺寸），取较大者更抗 0 值
+  var w=Math.max(rw,cw,0), h=Math.max(rh,ch,0);
+  if(w>0 && h>0) return {w:w, h:h, fromRect:true};
+  // 兜底：rect 不可用时才问内核要尺寸，并取 min 防止溢出
+  var iw=window.innerWidth||0, ih=window.innerHeight||0;
+  var vv=window.visualViewport||null;
+  var vw=(vv&&vv.width)||0, vh=(vv&&vv.height)||0;
+  var de=document.documentElement||null;
+  var dw=(de&&de.clientWidth)||0, dh=(de&&de.clientHeight)||0;
+  var fw=Math.max(iw,vw,dw,cw,1), fh=Math.max(ih,vh,dh,ch,1);
+  var bw=Math.min.apply(null,[iw||fw, vw||fw, dw||fw, cw||fw]);
+  var bh=Math.min.apply(null,[ih||fh, vh||fh, dh||fh, ch||fh]);
+  return {w:Math.max(1,bw), h:Math.max(1,bh), fromRect:false};
+}
+
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  var m=measure();
+  W=Math.max(1, m.w); H=Math.max(1, m.h);
+  /* 防自锁：若 rect 来源可用，却比内核自报视口小 80px 以上，说明内核某来源返回了
+     陈旧值（iPad 横屏高发）。此时以 rect 为准——它本来就是布局的真实结果，
+     宁可让卡片贴到底部，也不能把画布锁成一条。*/
+  if(m.fromRect){
+    var iw0=window.innerWidth||0, ih0=window.innerHeight||0;
+    var vv0=window.visualViewport||null;
+    var de0=document.documentElement||null;
+    var vh0=(vv0&&vv0.height)||0, dh0=(de0&&de0.clientHeight)||0;
+    var refH=Math.max(ih0,vh0,dh0,H);   // 只用「偏大」的方向做上界参考
+    if(refH-H>80) H=Math.max(H, refH);  // 明显被拉低 → 回退到视口高度
+    var refW=Math.max(window.innerWidth||0,(vv0&&vv0.width)||0,((de0&&de0.clientWidth)||0),W);
+    if(refW-W>80) W=Math.max(W, refW);
+  }
+  // 双保险：同步写死 CSS 尺寸，杜绝任何内核把 canvas 按属性值放大显示
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  layout();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', function(){ setTimeout(resize, 160); });
+if(window.visualViewport){
+  try{
+    window.visualViewport.addEventListener('resize', resize);
+    window.visualViewport.addEventListener('scroll', function(){ setTimeout(resize, 60); });
+  }catch(e){}
+}
+/* 首帧布局可能还没算完，rAF 后再量一次；旋转后再补两次。 */
+if(window.requestAnimationFrame){ try{ requestAnimationFrame(function(){ requestAnimationFrame(resize); }); }catch(e){} }
+setTimeout(resize, 60);
+setTimeout(resize, 320);
+setTimeout(resize, 900);
+
+var ARENA={x0:0,y0:0,x1:0,y1:0};
+function layout(){
+  var tb=document.getElementById('topbar'), go=document.getElementById('goal');
+  var short=(H<720);
+  var top=(tb?tb.offsetHeight:64)+(short?10:18);
+  var gh=go?go.offsetHeight:104;
+  var spell=S.level && S.level.type==='spell';
+  var bottom=gh+(spell?(short?60:96):(short?14:28));
+  var side=Math.max(20,Math.min(W<720?48:64, W*(short?0.075:0.09)));
+  // 场地保底高度：顶栏/底卡把屏幕挤扁时，优先压缩四周留白而不是让星球没地方放
+  var need=Math.min(210, Math.max(120, H*0.34));
+  var room=H-top-28-bottom;
+  if(room<need){
+    top=Math.max(20, top-Math.min(need-room, Math.max(0, top-20)));
+    room=H-top-28-bottom;
+    if(room<need){ bottom=Math.max(40, bottom-(need-room)); }
+  }
+  ARENA={x0:side,y0:top+28,x1:W-side,y1:H-bottom};
+  S.planets.forEach(function(p){
+    p.x=Math.max(ARENA.x0+p.r, Math.min(ARENA.x1-p.r, p.x));
+    p.y=Math.max(ARENA.y0+p.r, Math.min(ARENA.y1-p.r, p.y));
+  });
+}
+
+/* ---------- 7. 生成星球 ---------- */
+function mkPlanet(id, kind){
+  var d=PIN[id]||{py:id, say:id, zi:id, em:'', kind:kind};
+  // 识字星球：每颗按字分配外形 + 配色（形状/颜色各不相同，孩子一眼就分得清）
+  var ci = (typeof d.ci==='number') ? d.ci : (hzHash(id)>>>5) % ZI_COLORS.length;
+  var pal = ZI_COLORS[ci];
+  return {id:id, py:d.py, say:d.say, zi:d.zi||d.py, em:d.em||'', kind:d.kind||kind,
+    shape:d.shape||'circle', c1:pal[0], c2:pal[1],
+    x:0,y:0,r:0, vx:(Math.random()-0.5)*14, vy:(Math.random()-0.5)*14,
+    st:'alive', cap:0, ca0:0, cr0:0, respawn:0, spin:Math.random()*6, glow:0,
+    in:0, inD:0, pop:0};   // in/inD=弹入进度/错峰延迟，pop=点按脉冲
+}
+function clearOfBH(p){ // 与黑洞当前位置及停泊点保持安全距离，避免开局/重生被误吞
+  var b=S.bh; if(!b) return true;
+  var d1=Math.hypot(b.x-p.x, b.y-p.y), d2=Math.hypot(b.tx-p.x, b.ty-p.y);
+  return d1 > b.r*3.4 + p.r && d2 > b.r*3.4 + p.r;
+}
+function spawn(list){
+  var n=list.length, dk=diffOn();
+  var area=(ARENA.x1-ARENA.x0)*(ARENA.y1-ARENA.y0);
+  // 星球大小随难度档缩放：轻松档更大更好点，挑战档更小更费眼神
+  var r=Math.max(15, Math.max(H<720?18:24, Math.min(W<560?46:56, Math.sqrt(area/Math.max(n,1))*0.34))*dk.rk);
+  var gap=r*2.35;
+  S.planets=list.map(function(id){ var p=mkPlanet(id); p.r=r; return p; });
+  S.planets.forEach(function(p,i){ p.inD=i*0.055; });   // 开局错峰弹入，替代「凭空出现」
+  S.planets.forEach(function(p,i){
+    var ok=false, tries=0;
+    while(!ok && tries++<300){
+      p.x=ARENA.x0+p.r+Math.random()*(ARENA.x1-ARENA.x0-p.r*2);
+      p.y=ARENA.y0+p.r+Math.random()*(ARENA.y1-ARENA.y0-p.r*2);
+      ok=clearOfBH(p);
+      for(var j=0;j<i && ok;j++){ var q=S.planets[j];
+        if(Math.hypot(q.x-p.x,q.y-p.y) < gap){ ok=false; } }
+    }
+  });
+}
+function toneBalls(){
+  // 声调球固定在拼读卡上方的轨道（仅拼读关）
+  var go=document.getElementById('goal');
+  var gh=go?go.offsetHeight:104;
+  var y=H-gh-46, n=4, span=Math.min(W-140, 560), x0=(W-span)/2+span/(2*n);
+  var r=Math.max(H<720?17:22, Math.min(34,span/(2*n)+2));
+  return TONE_DEMO.map(function(t,i){
+    return {id:'tone'+t.t, tone:t.t, mark:t.mark, name:t.name, say:t.say,
+      kind:'tone', x:x0+i*span/n, y:y, r:r, st:'alive', cap:0, glow:0, spin:0};
+  });
+}
+
+/* ---------- 8. 关卡流程 ---------- */
+/* 关卡令牌 + 延时队列（2026-10-07）
+   ---------------------------------------------------------------
+   背景：吃掉最后一张卡后要等 900ms 才弹通关窗（setTimeout(finish,900)），
+   拼读关还有 1500ms 复读、2300ms 切下一题。这些延时任务原先**没有归属关卡**，
+   玩家若在窗口期内点「下一关 / 重试」，旧的 finish() 照样到点执行，
+   会把新关卡强制切回 win 场景 —— 游戏卡死，必须刷新才能继续（已用探针复现）。
+   修法：每次 startLevel 递增 S.lvToken；所有关卡内延时都用 lvLater() 包一层，
+   回调先校验令牌，令牌不符就丢弃。切关时再 clearTimeout 掉全部挂起任务。*/
+function lvLater(fn, ms){
+  var tk=S.lvToken;
+  var id=setTimeout(function(){
+    var k=S.pTimers.indexOf(id); if(k>=0) S.pTimers.splice(k,1);
+    if(S.lvToken!==tk) return;   // 已经切到别的关卡 → 这条延时作废
+    fn();
+  }, ms);
+  S.pTimers.push(id);
+  return id;
+}
+function lvClearTimers(){
+  for(var i=0;i<S.pTimers.length;i++){ try{ clearTimeout(S.pTimers[i]); }catch(e){} }
+  S.pTimers.length=0;
+}
+function warmList(){ // 本关需要预热的音频 key
+  var out=[];
+  if(S.level.type==='free'){ S.level.set.forEach(function(id){ out.push(akey(id)); }); }
+  else if(S.level.type==='zi'){
+    S.level.set.forEach(function(id){ if(ZI_AUDIO[id]) out.push(id); });   // 汉字本地音频包
+    S.level.set.forEach(function(id){ out.push(PIN[id]?PIN[id].say:id); });  // 兜底（缺包时用）
+  }
+  else{
+    S.level.tasks.forEach(function(t){
+      out.push(akey(t.sm)); out.push(akey(t.ym)); out.push(akey(t.sm+t.ym+t.t));
+    });
+    TONE_DEMO.forEach(function(d){ out.push('t'+d.t); });
+  }
+  return out;
+}
+function startLevel(i, forceLv){
+  lvClearTimers();          // 作废上一关遗留的延时任务（finish / 复读 / 切题）
+  S.lvToken++;              // 关卡令牌换代
+  S.li=i; S.level=forceLv || LEVELS[i];
+  S.planets=[]; S.parts=[]; S.floats=[]; S.eaten={}; S.ti=0; S.step=0; S.got='';
+  S.combo=0; S.comboT=0; S.winT=0; S.fireT=0;
+  S.tut=0; S.tutT=0;                 // 新手引导状态（下面按需开启）
+  S.hint=''; S.hintT=0;
+  layout(); // 先刷新活动区（顶栏/底部卡实际高度）
+  // 黑洞开局必须完整落在可见区内，否则手指点不到（旧版出生在 x=-60 的场外）
+  var br=Math.max(38,Math.min(58,W*0.055));
+  var bx=Math.max(br+18, Math.min(W-br-18, W*0.5));
+  var by=Math.max(ARENA.y0+br+14, Math.min(ARENA.y1-br-14, ARENA.y1-90));
+  var by0=Math.min(by+46, Math.max(by, H-br-8));
+  S.bh={x:bx, y:by0, r:br, rBase:br, growT:0, flash:0,
+        tx:bx, ty:by, disk:0, tgt:null, drag:false,
+        label:'', labelT:0, burst:0, hold:null};
+  if(!S.bgStars.length){
+    S.bgStars=[]; for(var k=0;k<170;k++) S.bgStars.push({
+      x:Math.random()*W, y:Math.random()*H, z:0.35+Math.random()*0.65,
+      r:0.6+Math.random()*1.6, a:0.25+Math.random()*0.6
+    });
+  }
+  if(S.level.type==='free' || S.level.type==='zi'){
+    // 自由认读 / 识字关：星球集合就是关卡字表
+    spawn(S.level.set.slice());
+  }else{
+    var sms={}, yms={};
+    S.level.tasks.forEach(function(t){ sms[t.sm]=1; yms[t.ym]=1; });
+    var extra=['b','m','h','sh','g','a','i','u','ao'];
+    var smL=Object.keys(sms), ymL=Object.keys(yms);
+    // 干扰项：让小朋友真的要“找一找”
+    ['p','f','d'].forEach(function(x){ if(smL.indexOf(x)<0 && smL.length<8) smL.push(x); });
+    ['o','e','ang'].forEach(function(x){ if(ymL.indexOf(x)<0 && ymL.length<8) ymL.push(x); });
+    shuffle(smL); shuffle(ymL);
+    spawn(smL.concat(ymL));
+    // 声调challenge 关才放声调球（声调延后到第 16 关）
+    if(S.level.tone) S.planets = S.planets.concat(toneBalls());
+  }
+  Sound.warm(warmList());
+  S.scene='play';
+  // 新手引导：第一次进入（或清空记录后）播放「点卡片→黑洞飞过去吃」的演示，点一下即学会并消失
+  if(!S.prog.seenTut){ S.tut=1; S.tutT=0; }
+  document.getElementById('btnRedo').style.display='';   // 关内随时可「重来本关」
+  document.getElementById('startMask').classList.add('hide');
+  document.getElementById('winMask').classList.add('hide');
+  updateTop(); updateGoal();
+  toast(S.level.tip, 3.4);
+  S.hint = S.level.tip;
+}
+function shuffle(a){ for(var i=a.length-1;i>0;i--){ var j=(Math.random()*(i+1))|0, t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+/* 认读/识字关卡片越吃越少后，把剩下的重新散开铺满场地（避免全挤在角落不好找） */
+function respread(){
+  var alive=S.planets.filter(function(p){ return p.st==='alive'; });
+  if(alive.length<2) return;
+  var gap=Math.max(72, alive[0].r*2.6);
+  alive.forEach(function(p,i){
+    var tries=0, okp=false, nx=p.x, ny=p.y;
+    while(!okp && tries++<240){
+      nx=ARENA.x0+p.r+Math.random()*Math.max(1,(ARENA.x1-ARENA.x0-p.r*2));
+      ny=ARENA.y0+p.r+Math.random()*Math.max(1,(ARENA.y1-ARENA.y0-p.r*2));
+      okp=clearOfBH({x:nx,y:ny,r:p.r});
+      if(okp){
+        /* 参照必须是「已放置卡的目标点」：本函数只写 tx/ty，卡的 x/y 仍是旧位置。
+           拿旧位置当参照会让目标点彼此挨得很近（实测最小间距低至 22px，而卡片半径 46
+           → 两张卡几乎完全重叠，孩子既看不清也点不到）。 */
+        var jx, jy;
+        // 后期逐步放宽间距要求，兜底档至少保证「不重叠」（宁可近一点也不让卡片叠在一起）
+        var need = tries<120 ? gap : (tries<200 ? gap*0.72 : p.r*2.08);
+        for(var j=0;j<i && okp;j++){
+          jx=(alive[j].tx!==undefined)?alive[j].tx:alive[j].x;
+          jy=(alive[j].ty!==undefined)?alive[j].ty:alive[j].y;
+          if(Math.hypot(jx-nx, jy-ny)<need) okp=false;
+        }
+      }
+    }
+    // 平滑换位：只记录目标点，由 drawPlanet 的 lerp 滑过去（「交换效果」），不再瞬移
+    p.tx=nx; p.ty=ny; p.vx=0; p.vy=0;
+  });
+}
+
+function updateTop(){
+  document.getElementById('lvName').textContent = '第'+(S.li+1)+'关 · '+S.level.name;
+  var dk=diffOn();
+  document.getElementById('lvSub').textContent =
+    (S.level.type==='zi' ? '看图识字 · 吃掉全部汉字' :
+    S.level.type==='free' ? '自由认读 · 吃掉全部拼音' : '拼读任务 · 声母→韵母→声调')
+    + '　' + dk.emo + dk.name;
+  document.getElementById('stars').textContent = '⭐ '+S.prog.stars;
+}
+function updateGoal(){
+  var L=document.getElementById('goalLeft'), T=document.getElementById('goalText');
+  L.innerHTML=''; 
+  if(!S.level){ T.textContent=''; return; }
+  if(S.level.type==='free' || S.level.type==='zi'){
+    var total=S.level.set.length, done=Object.keys(S.eaten).length;
+    T.innerHTML = S.level.type==='zi'
+      ? '还剩 <b>'+(total-done)+'</b> 个汉字没认到'
+      : '还剩 <b>'+(total-done)+'</b> 颗拼音星球没被吃掉';
+    return;
+  }
+  var t=S.level.tasks[S.ti];
+  if(!t){ T.innerHTML='<b>全部完成！</b>'; return; }
+  var parts=[
+    {v: S.step>=1 ? t.sm : '', sub:'声母', on:S.step===0},
+    {v: S.step>=2 ? t.ym : '', sub:'韵母', on:S.step===1},
+    {v: S.step>=3 ? markTone(t.sm+t.ym, t.t) : '', sub:'声调', on:S.step===2}
+  ];
+  parts.forEach(function(p,i){
+    if(i) { var ar=document.createElement('div'); ar.className='arrow'; ar.textContent='+'; L.appendChild(ar); }
+    var d=document.createElement('div');
+    d.className='slot'+(p.v?' fill':'')+(p.on?' wait':'');
+    d.innerHTML=(p.v?p.v:'?')+'<small>'+p.sub+'</small>';
+    L.appendChild(d);
+  });
+  var ar2=document.createElement('div'); ar2.className='arrow'; ar2.textContent='='; L.appendChild(ar2);
+  var d2=document.createElement('div');
+  d2.className='slot'+(S.step>=3?' fill':'');
+  d2.innerHTML=(S.step>=3? ('<span style="font-size:26px">'+t.em+'</span>') : '?')+'<small>'+(S.step>=3?t.zi:'汉字')+'</small>';
+  L.appendChild(d2);
+  T.innerHTML = '拼出：<b>'+markTone(t.sm+t.ym,t.t)+'</b>　'+t.em+' '+t.zi;
+}
+
+function toast(msg, sec){ S.hint=msg; S.hintT=sec||2.2; }
+
+/* ---------- 9. 交互 ---------- */
+function pos(e){ var r=cv.getBoundingClientRect(); var p=(e.touches&&e.touches[0]?e.touches[0]:e); return {x:p.clientX-r.left, y:p.clientY-r.top}; }
+function hit(px,py){
+  var best=null, bd=1e9;
+  for(var i=S.planets.length-1;i>=0;i--){ var p=S.planets[i];
+    if(p.st!=='alive') continue;
+    if(p.in!==undefined && p.in<0.9) continue;   // 还在弹入动画中（画面上看不见）→ 不可点
+    var d=Math.hypot(p.x-px,p.y-py), lim=Math.max(p.r+16,34);
+    if(d<=lim && d<bd){ bd=d; best=p; } }
+  return best;
+}
+function safeSfx(fn){ try{ if(typeof fn==='function') fn(); }catch(err){} }
+function onDown(e){
+  if(S.scene!=='play') return;
+  // 新手引导：任意点击即「学会」并消失（首次点击顺带正常吞噬，边做边学）
+  if(S.tut){ S.tut=0; if(!S.prog.seenTut){ S.prog.seenTut=true; saveProg(); } }
+  var now=Date.now(); if(now-lastDown<110) return; lastDown=now;
+  // 音频异常绝不能打断命中判定（微信里 AudioContext 可能直接抛错）
+  safeSfx(function(){ Sfx.ac(); });
+  safeSfx(function(){ Sound.unlock(); });
+  if(e.cancelable){ try{ e.preventDefault(); }catch(err){} }
+  var m=pos(e), p=hit(m.x,m.y), b=S.bh;
+  var bhLim=Math.max(b.r+20, 44);
+  if(Math.hypot(b.x-m.x,b.y-m.y) < bhLim){ b.drag=true; b.tgt=null; b.tx=m.x; b.ty=m.y; safeSfx(Sfx.click); return; }
+  if(p){ b.tgt=p; b.drag=false; p.pop=1; safeSfx(Sfx.click); }
+  else { b.tgt=null; b.drag=false; b.tx=m.x; b.ty=m.y; safeSfx(Sfx.click); }
+}
+function onMove(e){
+  if(S.scene!=='play' || !S.bh || !S.bh.drag) return;
+  var m=pos(e); S.bh.tx=m.x; S.bh.ty=m.y;
+}
+function onUp(){ if(S.bh) S.bh.drag=false; }
+var lastDown=0;
+cv.addEventListener('pointerdown', onDown);
+cv.addEventListener('pointermove', onMove);
+cv.addEventListener('pointerup', onUp);
+cv.addEventListener('pointercancel', onUp);
+// 兜底：老内核 / 微信 X5 不一定派发 pointer 事件
+cv.addEventListener('touchstart', onDown, {passive:false});
+cv.addEventListener('touchmove', onMove, {passive:false});
+cv.addEventListener('touchend', onUp);
+cv.addEventListener('touchcancel', onUp);
+cv.addEventListener('mousedown', onDown);
+cv.addEventListener('mousemove', onMove);
+cv.addEventListener('mouseup', onUp);
+
+/* ---------- 10. 吞噬结算 ---------- */
+/* 吃掉一张卡片 → 黑洞长大一点 + 内核闪一下（视觉上「吃得越多、越强」） */
+function feedBH(n){
+  var b=S.bh; if(!b) return;
+  if(b.growT===undefined) b.growT=0;
+  b.growT=Math.min(0.5, b.growT+(n||0.04));
+  b.flash=1;                       // 触发内核闪白 + 视界环外扩
+}
+function onEaten(p){
+  Sfx.swallow();
+  var pen=diffOn().pen;   // 难度档 → 点错/退场惩罚时长倍数
+  S.flash=Math.min(1, S.flash+0.35);
+  burst(p.x,p.y,p.kind==='tone'?'#ffd166':(p.kind==='sm'?'#6ea8ff':'#4dd4ac'));
+  if(S.level.type==='free'){
+    Sound.say(p.say, akey(p.id)); Sound.assertVoice(p.say, 0.86);
+    S.eaten[p.id]=1; S.prog.known[p.id]=1;
+    feedBH(0.05);
+    S.bh.label=p.py; S.bh.labelT=1.4;
+    S.prog.stars++; saveProg(); updateTop(); updateGoal();   // 合并成一次落盘（localStorage 是同步阻塞 API）
+    cheerPop(p.x,p.y);
+    var left=S.level.set.length-Object.keys(S.eaten).length;
+    if(left<=0) lvLater(finish, 900);
+    else if(left===3 || left===1) respread();
+    if(left<=3) toast('就剩 '+left+' 个啦！', 1.8);
+  }else if(S.level.type==='zi'){
+    // 识字关：点哪个字就读哪个字，读完一个少一个（TTS 出声，失败自动在线合成）
+    Sound.say(p.say, p.id); Sound.assertVoice(p.say, 0.86);
+    S.eaten[p.id]=1; S.prog.known[p.id]=1;
+    feedBH(0.055);
+    S.bh.label=p.py; S.bh.labelT=1.6;
+    S.prog.stars++; saveProg(); updateTop(); updateGoal();   // 合并成一次落盘
+    cheerPop(p.x,p.y);
+    var zleft=S.level.set.length-Object.keys(S.eaten).length;
+    if(zleft<=0) lvLater(finish, 900);
+    else if(zleft===3 || zleft===1) respread();     // 剩得少时重新散开，别挤成一堆
+    if(zleft<=3) toast('就剩 '+zleft+' 个字啦！', 1.8);
+  }else{
+    var t=S.level.tasks[S.ti];
+    if(!t) return;
+    if(p.kind==='tone'){
+      if(S.step<2){ toast('要先吃掉声母和韵母哦', 1.8); Sfx.nope(); p.respawn=0.9*pen; return; }
+      if(p.tone===t.t){
+        S.step=3; S.got=markTone(t.sm+t.ym,t.t);
+        Sound.say(t.zi, akey(t.sm+t.ym+t.t)); Sound.assertVoice(t.zi, 0.86);
+        lvLater(function(){ Sound.say(t.zi, akey(t.sm+t.ym+t.t)); }, 1500);
+        feedBH(0.06);
+        S.bh.label=S.got; S.bh.labelT=2.2; S.bh.burst=1;
+        S.prog.stars++; S.prog.known[t.sm]=1; S.prog.known[t.ym]=1; saveProg(); updateTop();
+        Sfx.win(); bigBurst(t); cheerPop(S.bh.x, S.bh.y-S.bh.r);
+        updateGoal();
+        lvLater(function(){
+          S.ti++; S.step=0; S.got=''; S.bh.label=''; S.bh.labelT=0;
+          if(S.ti>=S.level.tasks.length){ finish(); } else { updateGoal(); toast('下一个：'+markTone(S.level.tasks[S.ti].sm+S.level.tasks[S.ti].ym,S.level.tasks[S.ti].t), 2); }
+        }, 2300);
+      }else{
+        toast('这是'+p.name+'，我们要找的是'+TONE_DEMO[t.t-1].name+'哦', 2.4);
+        Sound.say(p.say, 't'+p.tone); Sound.assertVoice(p.say, 0.86);
+        Sfx.nope(); p.respawn=0.9*pen; S.shakeT=0.25;
+        p.err=1; floatText(p.x, p.y, '再想想', '#ff8a3d', 1.2);   // 错卡红框抖动 + 飘字
+        var pc=S.combo; S.combo=0;
+        if(pc>=3) floatText(S.bh.x, S.bh.y-S.bh.r-22, '连击断了，继续！', '#ff9aa2', 1.3);
+        bumpErr(p.id);
+      }
+      return;
+    }
+    // 声母 / 韵母
+    var need = (S.step===0)? t.sm : t.ym;
+    if(p.id===need){
+      Sound.say(p.say, akey(p.id)); Sound.assertVoice(p.say, 0.86);
+      feedBH(0.04);
+      S.bh.label = (S.step===0? t.sm : t.sm+t.ym); S.bh.labelT=1.6;
+      S.step++; S.got=S.bh.label; cheerPop(p.x,p.y);
+      updateGoal();
+      toast(S.step===1? ('声母 '+t.sm+' 吃到啦！再找韵母 '+t.ym) : ('韵母 '+t.ym+' 也吃到啦！现在选声调'), 2.4);
+      p.respawn=1.4*pen;
+    }else{
+      Sound.say(p.say, akey(p.id)); Sound.assertVoice(p.say, 0.86);
+      var want = (S.step===0)? ('声母 '+t.sm) : ('韵母 '+t.ym);
+      toast('这个读“'+p.say+'”，不是我们要的'+want+'，再找找～', 2.6);
+      Sfx.nope(); p.respawn=1.4*pen;
+      p.err=1; floatText(p.x, p.y, '再想想', '#ff8a3d', 1.2);
+      var pc=S.combo; S.combo=0;
+      if(pc>=3) floatText(S.bh.x, S.bh.y-S.bh.r-22, '连击断了，继续！', '#ff9aa2', 1.3);
+      bumpErr(p.id);
+    }
+  }
+}
+
+function burst(x,y,color){
+  for(var i=0;i<16;i++){
+    var a=Math.random()*Math.PI*2, s=40+Math.random()*140;
+    S.parts.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.5+Math.random()*0.5,
+      t:0,c:color,sz:2+Math.random()*3});
+  }
+}
+function bigBurst(t){
+  var cols=['#ffd166','#ff8a3d','#6ea8ff','#4dd4ac','#ff6b9d'];
+  for(var i=0;i<70;i++){
+    var a=Math.random()*Math.PI*2, s=60+Math.random()*320;
+    S.parts.push({x:S.bh.x,y:S.bh.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.8+Math.random()*0.9,
+      t:0,c:cols[(Math.random()*cols.length)|0],sz:2+Math.random()*4});
+  }
+}
+
+/* 上浮飘字 + 连击鼓励（2026-10-07）
+   孩子答对后画面要有「我做到了」的即时回响：卡片位置飘出 ⭐+1，
+   连续答对升级成「真棒 ×N / 好棒 ×N / 太厉害了 ×N」并追加粒子。*/
+function floatText(x,y,txt,col,sec){
+  S.floats.push({x:x,y:y,txt:txt,c:col||'#ffd166',t:0,life:sec||1.1});
+}
+function cheerPop(x,y){
+  S.combo++; S.comboT=2.6;
+  if(S.combo>=6)      floatText(x,y,'太厉害了 ×'+S.combo,'#ff8fd0',1.5);
+  else if(S.combo>=4) floatText(x,y,'好棒 ×'+S.combo,'#7ef7c8',1.3);
+  else if(S.combo>=2) floatText(x,y,'真棒 ×'+S.combo,'#a8e6ff',1.2);
+  else                floatText(x,y,'⭐ +1','#ffd166',1.1);
+  if(S.combo>=4) burst(x,y,'#ffd166');
+}
+
+// 拼读一步完成：发汉字音 → 星星 → 特效 → 进下一个 / 通关
+function spellDone(t){
+  var key=akey(t.sm+t.ym+t.t);
+  S.step=3; S.got=markTone(t.sm+t.ym,t.t);
+  Sound.say(t.zi, key);
+  lvLater(function(){ Sound.say(t.zi, key); }, 1500);
+  feedBH(0.06);
+  S.bh.label=t.zi; S.bh.labelT=2.2; S.bh.burst=1;
+  S.prog.stars++; S.prog.known[t.sm]=1; S.prog.known[t.ym]=1; saveProg(); updateTop();
+  Sfx.win(); bigBurst(t);
+  updateGoal();
+  lvLater(function(){
+    S.ti++; S.step=0; S.got=''; S.bh.label=''; S.bh.labelT=0;
+    if(S.ti>=S.level.tasks.length){ finish(); }
+    else { updateGoal(); toast('下一个：'+markTone(S.level.tasks[S.ti].sm+S.level.tasks[S.ti].ym,S.level.tasks[S.ti].t), 2); }
+  }, 2300);
+}
+
+function finish(){
+  // 防御：已在别的场景（玩别的关 / 已通关）就不重复弹窗，避免旧延时任务覆盖当前局
+  if(S.scene!=='play') return;
+  S.scene='win';
+  document.getElementById('btnRedo').style.display='none';
+  S.winT=3.6; S.combo=0; bigBurst();   // 弹窗背后持续放烟花
+  if(!S.level.tmp) S.prog.passed[S.li]=1;   // 临时复习关不冒充正式关卡的通关记录
+  saveProg();
+  var em = S.level.type==='zi' ? '📖' : (S.level.type==='free'?'🌟':'🏆');
+  document.getElementById('winEmoji').textContent=em;
+  document.getElementById('winTitle').textContent = '第'+(S.li+1)+'关 通关！';
+  document.getElementById('winDesc').innerHTML =
+    S.level.name+' —— 太厉害了！<br>累计 ⭐ '+S.prog.stars+' 颗星星';
+  document.getElementById('btnNext').style.display = (!S.level.tmp && S.li<LEVELS.length-1)?'':'none';
+  document.getElementById('winMask').classList.remove('hide');
+  Sfx.win();
+}
+
+/* ---------- 11. 主循环 ---------- */
+var last=0;
+function loop(ts){
+  var dt=Math.min(0.05,(ts-last)/1000||0.016); last=ts;
+  draw(dt);
+  requestAnimationFrame(loop);
+}
+function draw(dt){
+  var g=ctx;
+  g.clearRect(0,0,W,H);
+  // 背景
+  var bg=g.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#070a1c'); bg.addColorStop(0.5,'#0a0d24'); bg.addColorStop(1,'#05060f');
+  g.fillStyle=bg; g.fillRect(0,0,W,H);
+
+  if(S.scene==='start'){ drawStartBg(dt); return; }
+
+  var b=S.bh;
+  if(S.shakeT>0){ S.shakeT-=dt; g.save(); g.translate((Math.random()-0.5)*6,(Math.random()-0.5)*6); }
+  else g.save();
+
+  // 星空（受黑洞引力）
+  S.bgStars.forEach(function(s){
+    var dx=b.x-s.x, dy=b.y-s.y, d=Math.hypot(dx,dy)||1;
+    if(d<260){ var f=(1-d/260)*110*dt; s.x+=dx/d*f*s.z; s.y+=dy/d*f*s.z; }
+    s.x += (0.6+s.z*0.6)*dt*6;
+    if(s.x>W+4) s.x=-4;
+    if(d < b.r*0.5){ s.x=Math.random()*W; s.y=Math.random()*H; }
+    g.globalAlpha=s.a*(0.5+s.z*0.5);
+    g.fillStyle='#cfe0ff'; g.beginPath(); g.arc(s.x,s.y,s.r,0,6.283); g.fill();
+  });
+  g.globalAlpha=1;
+
+  // 星球（存活）
+  S.planets.forEach(function(p){ if(p.st==='alive') drawPlanet(g,p,dt); });
+  // 黑洞
+  drawBH(g,b,dt);
+  // 被捕获的星球
+  S.planets.forEach(function(p){ if(p.st==='capturing') drawCapture(g,p,dt,b); });
+  // 粒子：原地剔除（不 filter 重建数组）—— 每帧新建数组在 iPad 60fps 下是纯浪费
+  var ps=S.parts, w=0;
+  for(var pi=0; pi<ps.length; pi++){
+    var q=ps[pi];
+    q.t+=dt;
+    if(q.t>=q.life) continue;             // 过期就地丢弃
+    q.x+=q.vx*dt; q.y+=q.vy*dt; q.vx*=0.965; q.vy*=0.965;
+    ps[w++]=q;
+    g.globalAlpha=Math.max(0,1-q.t/q.life);
+    g.fillStyle=q.c; g.beginPath(); g.arc(q.x,q.y,q.sz,0,6.283); g.fill();
+  }
+  ps.length=w;
+  g.globalAlpha=1;
+
+  // 上浮飘字（⭐+1 / 连击鼓励）
+  var fl=S.floats, fw=0;
+  for(var fi=0; fi<fl.length; fi++){
+    var f=fl[fi]; f.t+=dt;
+    if(f.t>=f.life) continue;
+    fl[fw++]=f;
+    var fk=f.t/f.life;
+    g.globalAlpha=Math.max(0,1-fk*fk);
+    g.font='800 '+Math.max(15,Math.min(26,W*0.042))+'px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.textAlign='center'; g.textBaseline='middle';
+    g.lineWidth=4; g.strokeStyle='rgba(6,10,26,.85)';
+    g.strokeText(f.txt, f.x, f.y-fk*56);
+    g.fillStyle=f.c; g.fillText(f.txt, f.x, f.y-fk*56);
+  }
+  fl.length=fw;
+  g.globalAlpha=1;
+
+  // 连击计时窗口（2.6s 内没再答对就断）
+  if(S.comboT>0){ S.comboT-=dt; if(S.comboT<=0) S.combo=0; }
+  // 通关烟花：弹窗背后持续放，给孩子一个「我赢了」的实感
+  if(S.winT>0){
+    S.winT-=dt; S.fireT=(S.fireT||0)-dt;
+    if(S.fireT<=0){
+      S.fireT=0.32;
+      var fx=W*(0.12+Math.random()*0.76), fy=H*(0.18+Math.random()*0.5);
+      var fc=['#ffd166','#ff8a3d','#6ea8ff','#4dd4ac','#ff6b9d'];
+      for(var fi2=0; fi2<26; fi2++){
+        var fa=Math.random()*6.283, fsp=50+Math.random()*230;
+        S.parts.push({x:fx,y:fy,vx:Math.cos(fa)*fsp,vy:Math.sin(fa)*fsp,
+          life:0.7+Math.random()*0.8, t:0, c:fc[(Math.random()*5)|0], sz:2+Math.random()*3});
+      }
+    }
+  }
+
+  // 屏幕闪光
+  if(S.flash>0){ S.flash-=dt*2.2; g.fillStyle='rgba(255,220,160,'+Math.max(0,S.flash*0.12)+')'; g.fillRect(0,0,W,H); }
+
+  g.restore();
+
+  // 顶部提示条（窄屏自动换行，最多两行）；教程演示期间冻结 tip，避免两条提示叠在一起
+  if(S.hintT>0 && !S.tut){
+    S.hintT-=dt;
+    g.globalAlpha=Math.min(1,S.hintT*2);
+    g.font='600 '+Math.max(14,Math.min(20,W*0.032))+'px "PingFang SC","Microsoft YaHei",sans-serif';
+    var maxW=W-28, lines=wrapText(g,S.hint,maxW), lh=22;
+    var ty=(document.getElementById('topbar').offsetHeight||64)+12;
+    var bw=Math.max.apply(null,lines.map(function(s){return g.measureText(s).width;}))+36;
+    var bh=lines.length*lh+16;
+    g.fillStyle='rgba(8,12,32,.82)';
+    roundRect(g,W/2-bw/2,ty,bw,bh,14); g.fill();
+    g.fillStyle='#ffe9b0'; g.textAlign='center'; g.textBaseline='middle';
+    lines.forEach(function(s,i){ g.fillText(s, W/2, ty+8+lh/2+i*lh); });
+    g.globalAlpha=1;
+  }
+
+  // 新手引导演示：首次进入播放「点一下卡片→黑洞飞过去吃掉」
+  if(S.tut){
+    S.tutT += dt;
+    if(S.tutT>9){ S.tut=0; if(!S.prog.seenTut){ S.prog.seenTut=true; saveProg(); } }
+    else drawTutorial(g);
+  }
+}
+
+// 新手引导：高亮一张卡片 + 手指点击动画 + 顶部说明（点任意处即消失并学会）
+function drawTutorial(g){
+  var tc=null;
+  for(var i=0;i<S.planets.length;i++){ if(S.planets[i].st==='alive'){ tc=S.planets[i]; break; } }
+  if(!tc) return;
+  // 暗化遮罩（卡片与黑洞仍亮）
+  g.fillStyle='rgba(5,6,15,0.42)'; g.fillRect(0,0,W,H);
+  // 高亮环（呼吸）
+  var pr=tc.r+12+Math.sin(S.tutT*4)*4;
+  g.lineWidth=4; g.strokeStyle='rgba(255,221,102,'+(0.7+0.3*Math.sin(S.tutT*4))+')';
+  g.beginPath(); g.arc(tc.x,tc.y,pr,0,6.283); g.stroke();
+  g.globalAlpha=0.25; g.fillStyle='#ffd166';
+  g.beginPath(); g.arc(tc.x,tc.y,pr+8,0,6.283); g.fill(); g.globalAlpha=1;
+  // 手指点击动画：在卡片上方上下点动
+  var tap = (Math.sin(S.tutT*3.4)>0) ? 0 : 1;        // 0=抬起到位 1=按下
+  var fy = tc.y - tc.r - 46 + tap*22;
+  var fx = tc.x;
+  g.save(); g.translate(fx,fy);
+  // 手掌（圆头 + 短柄）
+  g.fillStyle='#fff'; g.strokeStyle='#231056'; g.lineWidth=3;
+  g.beginPath(); g.arc(0,0,15,0,6.283); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(-7,8); g.lineTo(-5,30); g.lineTo(6,30); g.lineTo(8,8); g.closePath();
+  g.fillStyle='#fff'; g.fill(); g.stroke();
+  g.restore();
+  // 指向卡片的小箭头
+  g.fillStyle='rgba(255,221,102,.9)';
+  g.beginPath(); g.moveTo(fx-7, fy+34); g.lineTo(fx+7, fy+34); g.lineTo(fx, fy+46); g.closePath(); g.fill();
+  // 顶部说明条（窄屏自动换行，最多两行）
+  var msg='点一下卡片，黑洞就会飞过去把它吃掉！';
+  g.font='700 '+Math.max(13,Math.min(20,W*0.034))+'px "PingFang SC","Microsoft YaHei",sans-serif';
+  var lines=wrapText(g,msg,W-48), lh=Math.max(18,Math.min(24,W*0.026));
+  var bw=Math.max.apply(null,lines.map(function(s){return g.measureText(s).width;}))+36;
+  var bh=lines.length*lh+14;
+  var ty=(document.getElementById('topbar').offsetHeight||64)+12;
+  g.fillStyle='rgba(8,12,32,.9)'; roundRect(g,W/2-bw/2,ty,bw,bh,14); g.fill();
+  g.fillStyle='#ffe9b0'; g.textAlign='center'; g.textBaseline='middle';
+  lines.forEach(function(s,i){ g.fillText(s, W/2, ty+7+lh/2+i*lh); });
+}
+
+function wrapText(g,txt,maxW){
+  txt=String(txt||'');
+  if(g.measureText(txt).width<=maxW) return [txt];
+  var best=1, bd=1e9;
+  for(var i=1;i<txt.length;i++){
+    var w=g.measureText(txt.slice(0,i)).width;
+    var d=Math.abs(w-maxW/2);
+    if(w<=maxW && d<bd){ bd=d; best=i; }
+  }
+  return [txt.slice(0,best), txt.slice(best)];
+}
+
+function drawStartBg(dt){
+  var g=ctx;
+  if(!S.bgStars.length){
+    for(var k=0;k<170;k++) S.bgStars.push({x:Math.random()*W,y:Math.random()*H,
+      z:0.35+Math.random()*0.65, r:0.6+Math.random()*1.6, a:0.25+Math.random()*0.6});
+  }
+  var cx=W/2, cy=H*0.42;
+  S.bgStars.forEach(function(s){
+    var dx=cx-s.x, dy=cy-s.y, d=Math.hypot(dx,dy)||1;
+    if(d<300){ var f=(1-d/300)*120*dt; s.x+=dx/d*f*s.z; s.y+=dy/d*f*s.z; }
+    if(d<40){ s.x=Math.random()*W; s.y=Math.random()*H; }
+    g.globalAlpha=s.a; g.fillStyle='#cfe0ff';
+    g.beginPath(); g.arc(s.x,s.y,s.r,0,6.283); g.fill();
+  });
+  g.globalAlpha=1;
+  drawBH(g,{x:cx,y:cy,r:Math.max(44,Math.min(70,W*0.06)),disk:performance.now()/1000},dt,true);
+}
+
+/* ---------- 6.5 星球外形：几何 / 房子 / 汽车 / 树 / 云 ---------- */
+function rrPath(g,x,y,w,h,rad){
+  rad=Math.min(rad, w/2, h/2);
+  g.moveTo(x+rad,y); g.lineTo(x+w-rad,y); g.quadraticCurveTo(x+w,y,x+w,y+rad);
+  g.lineTo(x+w,y+h-rad); g.quadraticCurveTo(x+w,y+h,x+w-rad,y+h);
+  g.lineTo(x+rad,y+h); g.quadraticCurveTo(x,y+h,x,y+h-rad);
+  g.lineTo(x,y+rad); g.quadraticCurveTo(x,y,x+rad,y); g.closePath();
+}
+function poly(g,pts,close){
+  g.moveTo(pts[0][0],pts[0][1]);
+  for(var i=1;i<pts.length;i++) g.lineTo(pts[i][0],pts[i][1]);
+  if(close!==false) g.closePath();
+}
+/* 以 (0,0) 为中心生成外形路径，r 为外接半径 */
+function shapePath(g, shape, r){
+  g.beginPath();
+  var i, a;
+  switch(shape){
+    case 'square':
+      rrPath(g, -r*0.84, -r*0.84, r*1.68, r*1.68, r*0.3); break;
+    case 'tri':
+      poly(g, [[0,-r*0.98],[r*0.9,r*0.72],[-r*0.9,r*0.72]]); break;
+    case 'diamond':
+      poly(g, [[0,-r],[r*0.94,0],[0,r],[-r*0.94,0]]); break;
+    case 'hex':
+      for(i=0;i<6;i++){ a=-Math.PI/2+i*Math.PI/3;
+        var px=Math.cos(a)*r, py=Math.sin(a)*r;
+        if(i===0) g.moveTo(px,py); else g.lineTo(px,py); }
+      g.closePath(); break;
+    case 'star':
+      for(i=0;i<10;i++){ a=-Math.PI/2+i*Math.PI/5;
+        var rr=(i%2===0)?r:r*0.47;
+        var sx=Math.cos(a)*rr, sy=Math.sin(a)*rr;
+        if(i===0) g.moveTo(sx,sy); else g.lineTo(sx,sy); }
+      g.closePath(); break;
+    case 'house':
+      poly(g, [[0,-r],[r*0.92,-r*0.3],[r*0.92,r*0.86],[-r*0.92,r*0.86],[-r*0.92,-r*0.3]]); break;
+    case 'car':
+      poly(g, [[-r*0.95,r*0.3],[-r*0.95,r*0.86],[r*0.95,r*0.86],[r*0.95,r*0.3],
+               [r*0.6,r*0.3],[r*0.36,-r*0.42],[-r*0.36,-r*0.42],[-r*0.6,r*0.3]]); break;
+    case 'rocket':
+      poly(g, [[0,-r],[-r*0.42,-r*0.1],[-r*0.62,r*0.42],[-r*0.62,r*0.86],
+               [r*0.62,r*0.86],[r*0.62,r*0.42],[r*0.42,-r*0.1]]); break;
+    case 'tree':
+      rrPath(g, -r*0.24, -r*0.1, r*0.48, r*1.0, r*0.14);
+      rrPath(g, -r*0.62, -r*0.98, r*1.24, r*1.0, r*0.36); break;
+    case 'cloud':
+      g.arc(-r*0.42, r*0.16, r*0.44, 0, 6.283);
+      g.arc(r*0.1, -r*0.24, r*0.56, 0, 6.283);
+      g.arc(r*0.48, r*0.2, r*0.4, 0, 6.283);
+      g.closePath(); break;
+    case 'heart':
+      g.moveTo(0, r*0.86);
+      g.bezierCurveTo(-r*1.35,-r*0.1, -r*0.62,-r*1.05, 0,-r*0.36);
+      g.bezierCurveTo(r*0.62,-r*1.05, r*1.35,-r*0.1, 0, r*0.86);
+      g.closePath(); break;
+    default:
+      g.arc(0,0,r,0,6.283);
+  }
+}
+/* 外形内部可写字区域的比例（窄 shape 字要缩一缩，才不会溢出） */
+function shapeTextScale(shape){
+  return shape==='tri' ? 0.62 : shape==='star' ? 0.58 : shape==='car' ? 0.6
+       : shape==='rocket' ? 0.58 : shape==='heart' ? 0.6 : shape==='house' ? 0.68
+       : shape==='tree' ? 0.66 : shape==='cloud' ? 0.7 : shape==='diamond' ? 0.72
+       : shape==='square' ? 0.86 : shape==='hex' ? 0.9 : 1;
+}
+function shapeBound(shape, r){ return shape==='square' ? r*0.88 : r; }
+/* 外形里的小零件：房子门窗 / 汽车轮子 / 树干 / 云纹… */
+function drawShapeDeco(g, shape, r){
+  g.fillStyle='rgba(35,16,86,.3)';
+  if(shape==='house'){
+    g.fillRect(-r*0.34, r*0.3, r*0.68, r*0.56);
+    g.fillRect(-r*0.66, -r*0.12, r*0.3, r*0.34);
+    g.fillRect(r*0.36, -r*0.12, r*0.3, r*0.34);
+  }else if(shape==='car'){
+    g.beginPath(); g.arc(-r*0.5, r*0.9, r*0.24, 0, 6.283); g.fill();
+    g.beginPath(); g.arc(r*0.5, r*0.9, r*0.24, 0, 6.283); g.fill();
+  }else if(shape==='tree'){
+    g.fillRect(-r*0.14, r*0.4, r*0.28, r*0.5);
+  }else if(shape==='rocket'){
+    g.fillRect(-r*0.52, r*0.5, r*0.28, r*0.36);
+    g.fillRect(r*0.24, r*0.5, r*0.28, r*0.36);
+  }else if(shape==='cloud'){
+    g.fillRect(-r*0.8, r*0.2, r*1.6, r*0.34);
+  }else if(shape==='star' || shape==='hex' || shape==='diamond' || shape==='square'){
+    g.beginPath(); g.arc(0, r*0.34, Math.max(2, r*0.12), 0, 6.283); g.fill();
+  }
+}
+
+function drawPlanet(g,p,dt){
+  if(p.kind==='tone'){ drawToneBall(g,p,dt); return; }
+  p.spin+=dt*0.4;
+  // 重生倒计时
+  if(p.respawn>0){
+    p.respawn-=dt;
+    if(p.respawn>0) return;          // 仍在倒计时 → 这一帧不绘制
+    p.st='alive'; p.cap=0; p.in=0; p.inD=0;
+    var tries=0, ok=false;
+      while(!ok && tries++<120){
+        p.x=ARENA.x0+p.r+Math.random()*(ARENA.x1-ARENA.x0-p.r*2);
+        p.y=ARENA.y0+p.r+Math.random()*(ARENA.y1-ARENA.y0-p.r*2);
+        ok=clearOfBH(p);
+        for(var j=0;j<S.planets.length && ok;j++){ var q=S.planets[j];
+          if(q!==p && q.st==='alive' && Math.hypot(q.x-p.x,q.y-p.y)<p.r*2.3){ ok=false; } }
+      }
+  }
+  // 入场：开局错峰弹入 / 重生后弹入（easeOutBack），避免卡片「凭空出现」
+  var inS=1;
+  if(p.inD>0){ p.inD-=dt; return; }
+  if(p.in<1){
+    p.in=Math.min(1, p.in+dt*3.4);
+    var e=p.in; inS=1+2.7*Math.pow(e-1,3)+1.7*Math.pow(e-1,2);
+    if(inS<0.02) return;
+  }
+  // 平滑换位（respread 给的 tx/ty）：滑到位前不走漂移；到位后恢复轻轻漂移
+  if(p.tx!==undefined){
+    var LK=Math.min(1,dt*5.5);
+    p.x+=(p.tx-p.x)*LK; p.y+=(p.ty-p.y)*LK;
+    if(Math.abs(p.tx-p.x)<0.6 && Math.abs(p.ty-p.y)<0.6){
+      p.x=p.tx; p.y=p.ty; p.tx=undefined; p.ty=undefined;
+      p.vx=(Math.random()-0.5)*12; p.vy=(Math.random()-0.5)*12;
+    }
+  } else {
+    // 漂移
+    p.x+=p.vx*dt; p.y+=p.vy*dt;
+    if(p.x<ARENA.x0+p.r){ p.x=ARENA.x0+p.r; p.vx=Math.abs(p.vx); }
+    if(p.x>ARENA.x1-p.r){ p.x=ARENA.x1-p.r; p.vx=-Math.abs(p.vx); }
+    if(p.y<ARENA.y0+p.r){ p.y=ARENA.y0+p.r; p.vy=Math.abs(p.vy); }
+    if(p.y>ARENA.y1-p.r){ p.y=ARENA.y1-p.r; p.vy=-Math.abs(p.vy); }
+  }
+  // 与黑洞距离过近时轻微逃离（避免误吞），拼读关目标星球除外
+  // 逃逸力度随黑洞成长等比放大：黑洞越大吸力越强，卡片也要「跑得更快」才不被顺手吃掉
+  var b=S.bh, d=Math.hypot(b.x-p.x,b.y-p.y);
+  var isTarget = (b.tgt===p);
+  var growK = (b.rBase? b.r/b.rBase : 1);
+  if(d < b.r+p.r+46 && !isTarget){
+    var f=(1-d/(b.r+p.r+46))*36*dt*growK;
+    p.x += (p.x-b.x)/(d||1)*f; p.y += (p.y-b.y)/(d||1)*f;
+  }
+  // 目标高亮
+  var needGlow=false;
+  if(S.level && S.level.type==='spell' && S.hintOn && diffOn().hint){
+    var t=S.level.tasks[S.ti]; if(t){
+      if(S.step===0 && p.id===t.sm) needGlow=true;
+      if(S.step===1 && p.id===t.ym) needGlow=true;
+      if(S.step===2 && p.kind==='tone' && p.tone===t.t) needGlow=true;
+    }
+  }
+  p.glow += ((needGlow||isTarget?1:0) - p.glow)*Math.min(1,dt*8);
+
+  var col = (p.kind==='zi') ? [p.c1, p.c2]           // 识字：每字一色
+          : p.kind==='sm' ? ['#7fb0ff','#3f6bd6']
+          : p.kind==='ym' ? ['#6ce3bb','#1f9c7c']
+          : ['#ffd98a','#e09b2d'];
+  if(p.pop>0) p.pop=Math.max(0, p.pop-dt*4);
+  if(p.err>0) p.err=Math.max(0, p.err-dt*1.6);   // 点错后的红框脉冲衰减
+  var sh = p.err>0 ? Math.sin(performance.now()/26)*p.err*7 : 0;  // 点错后局部抖动
+  var pup = 1 + Math.sin(performance.now()/300)*0.03 + p.glow*0.09 + (p.pop||0)*0.16;
+  var r=p.r*pup*inS;
+
+  g.save(); g.translate(p.x+sh,p.y+sh*0.6);
+  if(p.glow>0.02){
+    g.globalAlpha=0.25+p.glow*0.5;
+    var hg=g.createRadialGradient(0,0,r*0.6,0,0,r*2.1);
+    hg.addColorStop(0, col[0]); hg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=hg; g.beginPath(); g.arc(0,0,r*2.1,0,6.283); g.fill();
+    g.globalAlpha=1;
+  }
+  // 球体（识字星球是 Houses / Cars / 树 / 云 等几何外形，拼音仍是圆球）
+  var hr = (p.kind==='zi') ? shapeBound(p.shape, r) : r;
+  g.save();
+  shapePath(g, p.kind==='zi'?p.shape:'circle', hr);
+  var gr=g.createRadialGradient(-hr*0.32,-hr*0.36,hr*0.12,0,0,hr*1.05);
+  gr.addColorStop(0,col[0]); gr.addColorStop(1,col[1]);
+  g.fillStyle=gr; g.fill();
+  // 外形内部的“小零件”：房子有门窗、汽车有轮子、树有树干
+  g.save();
+  shapePath(g, p.kind==='zi'?p.shape:'circle', hr);
+  g.clip();
+  if(p.kind==='zi') drawShapeDeco(g, p.shape, hr);
+  g.restore();
+  g.lineWidth=2; g.strokeStyle='rgba(255,255,255,'+(0.3+p.glow*0.5)+')';
+  g.stroke();
+  // 点错反馈：橙红描边脉冲（仅拼读关点错时 p.err 被置 1）
+  if(p.err>0){
+    g.lineWidth=3+3*p.err; g.strokeStyle='rgba(255,90,60,'+(0.85*p.err)+')';
+    g.beginPath(); g.arc(0,0,hr+4,0,6.283); g.stroke();
+  }
+  g.restore();
+  // 拼音 / 声调
+  g.textAlign='center'; g.textBaseline='middle';
+  if(p.kind==='tone'){
+    g.fillStyle='#3a2600';
+    g.font='700 '+(r*1.0)+'px "Segoe UI",Arial,sans-serif';
+    g.fillText(p.mark, 0, -r*0.12);
+    g.font='600 '+(r*0.32)+'px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.fillText(p.name, 0, r*0.52);
+  }else if(p.kind==='zi'){
+    // 识字星球：外形（房子/汽车/树/云…）+ 图示 emoji + 大汉字 + 小拼音
+    var k=shapeTextScale(p.shape);
+    if(p.em){
+      g.font=(r*0.6*k)+'px "Apple Color Emoji","Segoe UI Emoji",sans-serif';
+      g.fillText(p.em, 0, -r*k*0.66);
+    }
+    g.font='800 '+(r*0.78*k)+'px "PingFang SC","Microsoft YaHei","Heiti SC",sans-serif';
+    g.lineWidth=Math.max(2,r*0.1); g.strokeStyle='rgba(255,255,255,.85)';
+    g.strokeText(p.zi||p.py, 0, -r*k*0.02);
+    g.fillStyle='#231056';
+    g.fillText(p.zi||p.py, 0, -r*k*0.02);
+    g.font='700 '+(r*0.27*k)+'px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.fillStyle='rgba(35,16,86,.8)';
+    g.fillText(p.py, 0, r*k*0.46);
+  }else{
+    g.fillStyle='#0c1330';
+    g.font='800 '+(r*0.72)+'px "Segoe UI",Arial,"Times New Roman",sans-serif';
+    g.fillText(p.py, 0, S.showZi? -r*0.12 : 0);
+    if(S.showZi){
+      g.font='600 '+(r*0.34)+'px "PingFang SC","Microsoft YaHei",sans-serif';
+      g.fillStyle='rgba(12,19,48,.72)';
+      g.fillText(p.say, 0, r*0.5);
+    }
+  }
+  g.restore();
+
+  // 被黑洞触碰 → 开始捕获
+  if(S.bh && inS>0.9 && d < S.bh.r*0.72 + p.r*0.2){
+    p.st='capturing'; p.cap=0;
+    p.cr0=Math.max(d, p.r*0.5); p.ca0=Math.atan2(p.y-S.bh.y, p.x-S.bh.x);
+    if(S.bh.tgt===p) S.bh.tgt=null;
+  }
+}
+
+function drawToneBall(g,p,dt){ // 声调球：固定位置，不漂移
+  if(p.respawn>0){
+    p.respawn-=dt;
+    if(p.respawn<=0){ p.st='alive'; p.cap=0; }
+    return;
+  }
+  var b=S.bh, isTarget=(b&&b.tgt===p);
+  var needGlow=false;
+  if(S.level && S.level.type==='spell' && S.hintOn && diffOn().hint){
+    var t=S.level.tasks[S.ti];
+    if(t && S.step===2 && p.tone===t.t) needGlow=true;
+  }
+  p.glow += ((needGlow||isTarget?1:0)-p.glow)*Math.min(1,dt*8);
+  if(p.err>0) p.err=Math.max(0, p.err-dt*1.6);
+  var sh = p.err>0 ? Math.sin(performance.now()/26)*p.err*6 : 0;
+  var r=p.r*(1+Math.sin(performance.now()/300)*0.03+p.glow*0.09);
+  g.save(); g.translate(p.x+sh,p.y);
+  if(p.glow>0.02){
+    g.globalAlpha=0.25+p.glow*0.5;
+    var hg=g.createRadialGradient(0,0,r*0.6,0,0,r*2.1);
+    hg.addColorStop(0,'#ffd98a'); hg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=hg; g.beginPath(); g.arc(0,0,r*2.1,0,6.283); g.fill();
+    g.globalAlpha=1;
+  }
+  var gr=g.createRadialGradient(-r*0.32,-r*0.36,r*0.12,0,0,r);
+  gr.addColorStop(0,'#ffd98a'); gr.addColorStop(1,'#e09b2d');
+  g.fillStyle=gr; g.beginPath(); g.arc(0,0,r,0,6.283); g.fill();
+  g.lineWidth=2; g.strokeStyle='rgba(255,255,255,'+(0.3+p.glow*0.5)+')';
+  g.beginPath(); g.arc(0,0,r,0,6.283); g.stroke();
+  if(p.err>0){
+    g.lineWidth=3+3*p.err; g.strokeStyle='rgba(255,90,60,'+(0.85*p.err)+')';
+    g.beginPath(); g.arc(0,0,r+4,0,6.283); g.stroke();
+  }
+  g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle='#3a2600';
+  g.font='700 '+(r*1.0)+'px "Segoe UI",Arial,sans-serif';
+  g.fillText(p.mark, 0, -r*0.12);
+  g.font='600 '+(r*0.32)+'px "PingFang SC","Microsoft YaHei",sans-serif';
+  g.fillText(p.name, 0, r*0.52);
+  g.restore();
+  // 被黑洞触碰 → 捕获
+  if(b){
+    var d=Math.hypot(b.x-p.x, b.y-p.y);
+    if(d < b.r*0.72 + p.r*0.2){
+      p.st='capturing'; p.cap=0;
+      p.cr0=Math.max(d,p.r*0.5); p.ca0=Math.atan2(p.y-b.y, p.x-b.x);
+      if(b.tgt===p) b.tgt=null;
+    }
+  }
+}
+
+function drawCapture(g,p,dt,b){
+  p.cap += dt*1.7;
+  var t=Math.min(1,p.cap);
+  var rr=p.cr0*Math.pow(1-t,1.5);
+  var ang=p.ca0 + t*6.0;
+  var x=b.x+Math.cos(ang)*rr, y=b.y+Math.sin(ang)*rr;
+  var s=Math.max(0.06,1-t*0.85);
+  var stretch=1+t*1.6;
+  g.save(); g.translate(x,y); g.rotate(ang+Math.PI/2); g.scale(s*stretch, s);
+  var col = p.kind==='sm' ? '#7fb0ff' : (p.kind==='ym' ? '#6ce3bb' : '#ffd98a');
+  g.globalAlpha=Math.max(0,1-t*0.7);
+  g.textAlign='center'; g.textBaseline='middle';
+  if(p.kind==='zi'){
+    // 识字卡：吸入过程保留真实外形 + 汉字（原先退化成一个纯色圆，形状和汉字会凭空消失）
+    var hr=shapeBound(p.shape, p.r), kz=shapeTextScale(p.shape);
+    shapePath(g, p.shape, hr);
+    var gr=g.createRadialGradient(-hr*0.32,-hr*0.36,hr*0.12,0,0,hr*1.05);
+    gr.addColorStop(0,p.c1); gr.addColorStop(1,p.c2);
+    g.fillStyle=gr; g.fill();
+    g.lineWidth=2; g.strokeStyle='rgba(255,255,255,.5)'; g.stroke();
+    if(t<0.55 && p.zi){
+      g.font='800 '+(p.r*0.78*kz)+'px "PingFang SC","Microsoft YaHei","Heiti SC",sans-serif';
+      g.lineWidth=Math.max(2,p.r*0.1); g.strokeStyle='rgba(255,255,255,.85)';
+      g.strokeText(p.zi, 0, -p.r*kz*0.02);
+      g.fillStyle='#231056'; g.fillText(p.zi, 0, -p.r*kz*0.02);
+    }
+  }else{
+    g.fillStyle=col; g.beginPath(); g.arc(0,0,p.r,0,6.283); g.fill();
+    if(t<0.5){
+      g.fillStyle='#0c1330';
+      var fs=p.r*0.7;
+      g.font='800 '+fs+'px "Segoe UI",Arial,sans-serif';
+      g.fillText(p.kind==='tone'?p.mark:p.py, 0, 0);
+    }
+  }
+  g.restore(); g.globalAlpha=1;
+  if(p.cap>=1){
+    // 认读关（自由拼读 / 识字）：吃掉就永久消失 → 卡片「越吃越少」
+    // 拼读关：同一张卡要重复用（找声母、找韵母、选声调），所以吃完重生
+    if(S.level.type==='free' || S.level.type==='zi'){ p.st='gone'; }
+    else { p.st='alive'; p.respawn = (p.kind==='tone')? 0.6 : 1.2; }
+    onEaten(p);
+  }
+}
+
+function drawBH(g,b,dt,demo){
+  b.disk += dt*1.5;
+  // 目标靠近
+  if(!demo){
+    if(b.tgt && b.tgt.st==='alive'){ b.tx=b.tgt.x; b.ty=b.tgt.y; }
+    var k=1-Math.pow(diffOn().spd,dt);   // 难度档决定黑洞追星的-speed
+    b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
+  }
+  // 成长：rBase 是开局基准半径，growT 记录「吃了几口」，r 平滑逼近目标半径
+  if(b.rBase===undefined) b.rBase=b.r;
+  if(b.growT===undefined) b.growT=0;
+  if(b.flash===undefined) b.flash=0;
+  var wantR = b.rBase*(1+Math.min(0.62, b.growT));
+  b.r += (wantR-b.r)*Math.min(1, dt*3.2);
+  if(b.flash>0) b.flash=Math.max(0, b.flash-dt*2.4);
+  var R=b.r*(1+ (b.burst>0? b.burst*0.5:0));
+  if(b.burst>0) b.burst=Math.max(0,b.burst-dt*1.2);
+  // 长大越多内核越「沉」（由纯黑渐变到深紫黑），被吃的一瞬间闪一下
+  var gv=Math.min(1, b.growT/0.62);
+  var fl=b.flash;
+  g.save(); g.translate(b.x,b.y);
+  // 外层引力光晕（成长后更亮更暖）
+  var hg=g.createRadialGradient(0,0,R*0.8,0,0,R*4.2);
+  hg.addColorStop(0,'rgba(255,150,60,'+(0.30+gv*0.14+fl*0.20)+')');
+  hg.addColorStop(0.35,'rgba(160,90,255,'+(0.14+gv*0.10+fl*0.16)+')');
+  hg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=hg; g.beginPath(); g.arc(0,0,R*4.2,0,6.283); g.fill();
+  // 吸积盘（旋转椭圆环）
+  g.save(); g.rotate(b.disk*0.5);
+  for(var i=0;i<3;i++){
+    g.save(); g.scale(1,0.30); g.rotate(b.disk*(1+i*0.35));
+    var rr=R*(1.5+i*0.42);
+    var lg=g.createLinearGradient(-rr,0,rr,0);
+    lg.addColorStop(0,'rgba(255,80,40,0)');
+    lg.addColorStop(0.25,'rgba(255,170,70,'+(0.75-i*0.16+fl*0.2)+')');
+    lg.addColorStop(0.5,'rgba(255,240,200,'+(0.85-i*0.18+fl*0.2)+')');
+    lg.addColorStop(0.75,'rgba(255,120,50,'+(0.7-i*0.16+fl*0.2)+')');
+    lg.addColorStop(1,'rgba(255,80,40,0)');
+    g.strokeStyle=lg; g.lineWidth=R*0.20;
+    g.beginPath(); g.arc(0,0,rr,0,6.283); g.stroke();
+    g.restore();
+  }
+  g.restore();
+  // 事件视界：内核色随成长加深（黑 → 深紫黑）
+  var cg=g.createRadialGradient(0,0,R*0.05,0,0,R);
+  cg.addColorStop(0,'rgba('+Math.round(6+gv*10)+','+Math.round(2)+','+Math.round(12+gv*46)+',1)');
+  cg.addColorStop(0.72,'rgba(0,0,0,1)');
+  cg.addColorStop(1,'rgba(0,0,0,1)');
+  g.fillStyle=cg; g.beginPath(); g.arc(0,0,R,0,6.283); g.fill();
+  // 内核边缘环：被吃后闪亮一圈（外扩淡出的反馈环）
+  if(fl>0){
+    g.strokeStyle='rgba(255,236,190,'+(fl*0.95)+')';
+    g.lineWidth=2+fl*7;
+    g.beginPath(); g.arc(0,0,R*(1+(1-fl)*0.22),0,6.283); g.stroke();
+  }
+  // 视界描边：成长后更亮更粗
+  g.strokeStyle='rgba(255,'+Math.round(215+gv*30)+','+Math.round(150+gv*60)+','+(0.9+gv*0.1)+')';
+  g.lineWidth=2.4+gv*1.8+fl*2.6;
+  g.shadowColor='rgba(255,190,110,'+(0.35+gv*0.4+fl*0.5)+')'; g.shadowBlur=6+gv*10+fl*26;
+  g.beginPath(); g.arc(0,0,R,0,6.283); g.stroke();
+  g.shadowBlur=0;
+  // 内核里的小高光点：数量随成长增加，暗示「吃得越多越强」
+  var dots=Math.round(gv*4);
+  for(var q=0;q<dots;q++){
+    var an=b.disk*(0.7+q*0.5), dr=R*(0.34+0.10*(q%2));
+    g.fillStyle='rgba(255,'+(190+q*12)+',110,'+(0.30+gv*0.25)+')';
+    g.beginPath(); g.arc(Math.cos(an)*dr, Math.sin(an)*dr, R*(0.055+0.02*gv),0,6.283); g.fill();
+  }
+  // 中心标签（已拼出的音）
+  if(b.labelT>0 && b.label){
+    b.labelT-=dt;
+    g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle='#fff';
+    var fs=Math.min(R*0.62, 34);
+    g.font='800 '+fs+'px "Segoe UI",Arial,sans-serif';
+    g.shadowColor='#ffb347'; g.shadowBlur=18;
+    g.fillText(b.label,0,0);
+    g.shadowBlur=0;
+  }
+  g.restore();
+}
+
+function roundRect(g,x,y,w,h,r){
+  g.beginPath();
+  g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r);
+  g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r);
+  g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath();
+}
+
+/* ---------- 12. 面板 / 按钮 ---------- */
+function openLevels(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='选择关卡';
+  sc.innerHTML='';
+  LEVELS.forEach(function(L,i){
+    var unlocked = i===0 || S.prog.passed[i-1];
+    var d=document.createElement('div');
+    d.className='lvbtn'+(unlocked?'':' locked');
+    // 难度分层：关卡名后面挂星级（启蒙 ★ / 巩固 ★★ / 提升 ★★★）
+    var st = L.diff ? ('<span style="font-size:11px;opacity:.7;margin-left:6px">'+diffStar(L.diff)+'</span>') : '';
+    d.innerHTML='<span class="no">'+(i+1)+'</span><span>'+L.name+st+'</span>'+
+      '<span class="tag">'+(S.prog.passed[i]?'✅ 已通关':(unlocked?(L.type==='free'?'自由认读':'拼读任务'):'🔒 未解锁'))+'</span>';
+    if(unlocked) d.onclick=function(){ Sfx.click(); closePanel(); resize(); startLevel(i); };
+    sc.appendChild(d);
+  });
+  var dk=diffOn();
+  document.getElementById('panelExtra').innerHTML=
+    '<div class="tip">累计 ⭐ <b>'+S.prog.stars+'</b> 颗　已认识汉字/拼音 <b>'+Object.keys(S.prog.known).length+'</b> 个　当前难度 <b>'+dk.emo+' '+dk.name+'</b></div>'+
+    '<div class="tip" style="text-align:right"><button class="btn" id="btnProgress" style="padding:8px 14px">📊 家长进度查看</button></div>';
+  var bp=document.getElementById('btnProgress');
+  if(bp) bp.onclick=function(){ Sfx.click(); openProgress(); };
+  document.getElementById('panel').classList.remove('hide');
+}
+function openSettings(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='老师 / 家长设置';
+  sc.innerHTML='';
+  var dkk=diffOn();
+  var dw=document.createElement('div'); dw.className='sw';
+  dw.innerHTML='<div>🎚 难度档位<div style="font-size:12px;opacity:.55">当前：'+dkk.emo+' '+dkk.name+' —— '+dkk.desc+'</div></div>';
+  var dwb=document.createElement('button'); dwb.className='btn'+(dkk.rk>1?' on':'');
+  dwb.textContent='切换';
+  dwb.onclick=function(){ Sfx.click(); openDiff(); };
+  dw.appendChild(dwb); sc.appendChild(dw);
+  var rows=[
+    ['🔊 朗读发音', 'voiceOn', '关闭后只保留音效'],
+    ['🎵 游戏音效', 'sfxOn', '吞噬声、奖励声'],
+    ['🈶 星球上显示示例汉字', 'showZi', '如 b 显示“玻”，帮助理解发音'],
+    ['💡 高亮提示正确答案', 'hintOn', '关掉可提高难度']
+  ];
+  rows.forEach(function(r){
+    var d=document.createElement('div'); d.className='sw';
+    d.innerHTML='<div>'+r[0]+'<div style="font-size:12px;opacity:.55">'+r[2]+'</div></div>';
+    var b=document.createElement('button'); b.className='btn'+(S[r[1]]?' on':'');
+    b.textContent=S[r[1]]?'开':'关';
+    b.onclick=function(){ S[r[1]]=!S[r[1]]; b.classList.toggle('on',S[r[1]]); b.textContent=S[r[1]]?'开':'关'; Sfx.click(); };
+    d.appendChild(b); sc.appendChild(d);
+  });
+  var t=document.createElement('div'); t.className='tip';
+  t.innerHTML='<b>汉字（识字关 / 拼读结果）：</b>播放随游戏打包的本地 mp3（303 条，<b>不联网、不依赖浏览器语音、不受微信限制</b>），点哪个字都念哪个字。'+
+    '<br><b>拼音（声母 / 韵母 / 音节）：</b>同样播放内置的 76 个发音包（离线可用）。'+
+    '<br><b>本机语音实测：</b>'+Voice.state+
+    '    （结论：'+(Voice.zhState==='good'?'这台设备的浏览器语音也能用，作为备用已就绪'
+      :(Voice.zhState==='bad'?'本机浏览器语音不出声 —— 没关系，汉字与拼音都已改用本地发音包，不受影响'
+      :'正在实测…（不影响出字，本地发音包已就绪）'))+'）'+
+    '<br><b>教学建议：</b>1～9 关为自由认读，适合第一课时热身；10～12 关为拼读任务，建议老师在旁边带读“声母m—韵母a—一声—妈”。'+
+    '<br><b>操作：</b>点星球让黑洞飞过去，也可以直接按住黑洞拖动。';
+  sc.appendChild(t);
+  var test=document.createElement('button'); test.className='btn'; test.style.marginTop='10px';
+  test.textContent='▶ 发音自检 · 拼音（a o e i u ü）';
+  test.style.width='100%'; test.style.textAlign='center';
+  test.onclick=function(){ Sfx.ac(); Sound.unlock();
+    [['啊','a'],['喔','o'],['鹅','e'],['衣','i'],['乌','u'],['鱼','v']].forEach(function(pr,i){
+      setTimeout(function(){ Sound.say(pr[0], pr[1]); }, i*1200); }); };
+  sc.appendChild(test);
+  var test2=document.createElement('button'); test2.className='btn'; test2.style.marginTop='10px';
+  test2.textContent='▶ 汉字 TTS 自检（日 水 火 山）';
+  test2.style.width='100%'; test2.style.textAlign='center';
+  test2.onclick=function(){ Sfx.ac(); Sound.unlock();
+    ['日','水','火','山'].forEach(function(z,i){
+      setTimeout(function(){ Sound.say(z, z); Sound.assertVoice(z, 0.85); }, i*1300); }); };
+  sc.appendChild(test2);
+  var pg=document.createElement('button'); pg.className='btn'; pg.style.marginTop='10px';
+  pg.textContent='📊 家长进度查看（认字 / 星星 / 薄弱字）';
+  pg.style.width='100%'; pg.style.textAlign='center';
+  pg.onclick=function(){ Sfx.click(); openProgress(); };
+  sc.appendChild(pg);
+  /* 缓存 / 链接：微信内置浏览器缓存极硬，改了内容必须给家长一条「全新 URL」的路 */
+  var cl=document.createElement('button'); cl.className='btn'; cl.style.marginTop='10px';
+  cl.textContent='🧹 清理缓存并加载最新版';
+  cl.style.width='100%'; cl.style.textAlign='center';
+  cl.onclick=function(){
+    if(!confirm('清掉缓存后用最新版本重新打开。\n\n学习进度（星星 / 认字记录）会完整保留，不会被清掉。\n\n确定吗？')) return;
+    clearCacheThenReload();
+  };
+  sc.appendChild(cl);
+  var ck=document.createElement('button'); ck.className='btn'; ck.style.marginTop='8px';
+  ck.textContent='📋 复制「最新版链接」发到微信群';
+  ck.style.width='100%'; ck.style.textAlign='center';
+  ck.onclick=function(){ Sfx.click(); copyNewLink(); };
+  sc.appendChild(ck);
+  var rs=document.createElement('button'); rs.className='btn'; rs.style.marginTop='10px';
+  rs.textContent='🗑 清空学习进度';
+  rs.onclick=function(){ if(confirm('确定清空所有星星和通关记录？')){ S.prog={passed:{},stars:0,known:{}}; saveProg(); updateTop(); openSettings(); } };
+  sc.appendChild(rs);
+  document.getElementById('panelExtra').innerHTML='';
+  document.getElementById('panel').classList.remove('hide');
+}
+/* ---------- 12b. 难度档位选择 ---------- */
+function openDiff(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='选择难度档位';
+  sc.innerHTML='';
+  var cur=S.prog.diff||2;
+  [1,2,3].forEach(function(k){
+    var d=DIFF[k];
+    var row=document.createElement('div'); row.className='lvbtn';
+    row.innerHTML='<span class="no">'+d.emo+'</span>'+
+      '<span>'+d.name+'档<div style="font-size:12px;opacity:.62;display:block;margin-top:3px">'+d.desc+'</div></span>'+
+      '<span class="tag">'+(cur===k?'✅ 当前':'点此切换')+'</span>';
+    row.onclick=function(){
+      S.prog.diff=k; saveProg(); Sfx.click();
+      document.getElementById('panel').classList.add('hide');
+      S.hint='难度：'+d.emo+' '+d.name+' —— '+d.desc; S.hintT=3.2;
+      updateTop(); openSettings();
+    };
+    sc.appendChild(row);
+  });
+  document.getElementById('panelExtra').innerHTML=
+    '<div class="tip">难度只影响<b>手感</b>（星球大小 / 黑洞快慢 / 点错惩罚 / 是否给提示），<b>不增加也不减少要认的字</b>。<br>'+
+    '基础弱的孩子选「🐣 轻松」多玩几遍；认得快的大班孩子可用「🦅 挑战」。</div>';
+  document.getElementById('panel').classList.remove('hide');
+}
+
+/* ---------- 12c. 家长端进度查看 ---------- */
+function ziMiss(){ return ZI.filter(function(z){ return !S.prog.known[z[0]]; }).map(function(z){ return z[0]; }); }
+function levelDone(L){ var d=0; if(L.set) L.set.forEach(function(id){ if(S.prog.known[id]) d++; }); return {done:d,total:L.set.length}; }
+function openProgress(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='📊 学习进度（家长端）';
+  sc.innerHTML='';
+  var dk=diffOn();
+  var zTotal=new Set(ZI.map(function(z){ return z[0]; })).size;
+  var zDone=ZI.filter(function(z){ return S.prog.known[z[0]]; }).length;
+  var passedC=LEVELS.filter(function(L,i){ return S.prog.passed[i]; }).length;
+  var sum=document.createElement('div'); sum.className='tip';
+  sum.innerHTML='<div style="font-size:15px;line-height:1.95">'+
+    '累计星星 <b>⭐ '+S.prog.stars+'</b>　已通关 <b>'+passedC+'/'+LEVELS.length+'</b> 关<br>'+
+    '已认识汉字 <b>'+zDone+'/'+zTotal+'</b>　点错的音 <b>'+Object.keys(S.prog.err||{}).length+'</b> 个<br>'+
+    '当前难度 <b>'+dk.emo+' '+dk.name+'</b>　朗读开关 <b>'+(S.voiceOn?'开':'关')+'</b></div>';
+  sc.appendChild(sum);
+  /* 增强：难度分级通关统计 + 汉字认会进度条 */
+  var dCnt=[0,0,0], dTot=[0,0,0];
+  LEVELS.forEach(function(L,i){ if(L.type!=='zi') return; var di=(L.diff||1)-1; if(di<0||di>2) return; dTot[di]++; if(S.prog.passed[i]) dCnt[di]++; });
+  var dName=['★ 启蒙','★★ 巩固','★★★ 提升'];
+  var bar=function(p){ return `<div style='height:8px;border-radius:6px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:3px'><div style='height:100%;width:`+p+`%;background:linear-gradient(90deg,#6ce3bb,#8aa6ff)'></div></div>`; };
+  var dHtml=`<div style='margin-top:10px'><b>各难度通关</b></div><div style='display:flex;flex-direction:column;gap:6px;margin-top:6px'>`;
+  for(var di2=0;di2<3;di2++){ var p2=dTot[di2]?Math.round(dCnt[di2]/dTot[di2]*100):0;
+    dHtml+=`<div style='font-size:13px'><div style='display:flex;justify-content:space-between'><span>`+dName[di2]+`</span><span>`+dCnt[di2]+`/`+dTot[di2]+` 关　`+p2+`%</span></div>`+bar(p2)+`</div>`; }
+  dHtml+=`</div>`;
+  var zp=zTotal?Math.round(zDone/zTotal*100):0;
+  var zHtml=`<div style='margin-top:10px;font-size:13px'><div style='display:flex;justify-content:space-between'><span>汉字认会进度</span><span>`+zDone+`/`+zTotal+`　`+zp+`%</span></div>`+bar(zp).replace('#6ce3bb,#8aa6ff','#ffd166,#ff9f6b')+`</div>`;
+  var diffBox=document.createElement('div'); diffBox.className='tip'; diffBox.innerHTML=dHtml+zHtml;
+  sc.appendChild(diffBox);
+  var grid=document.createElement('div'); grid.className='tip'; grid.style.fontSize='13px';
+  var lines=[];
+  LEVELS.forEach(function(L,i){
+    if(L.type!=='zi') return;
+    var q=levelDone(L);
+    lines.push('<div style="display:flex;justify-content:space-between;border-bottom:1px dashed rgba(255,255,255,.12);padding:5px 0">'+
+      '<span>'+(i+1)+'. '+L.name+'</span>'+
+      '<b style="color:'+(q.done>=q.total?'#6ce3bb':'#ffd166')+'">'+q.done+'/'+q.total+' '+diffStar(L.diff)+'</b></div>');
+  });
+  grid.innerHTML='<div style="margin-top:10px"><b>各关认字情况</b></div>'+lines.join('');
+  sc.appendChild(grid);
+  var miss=ziMiss();
+  var errs=Object.keys(S.prog.err||{}).sort(function(a,b){ return (S.prog.err[b]||0)-(S.prog.err[a]||0); });
+  var wk=document.createElement('div'); wk.className='tip'; wk.style.fontSize='13px';
+  wk.innerHTML='<div style="margin-top:10px"><b>还没认会的字（'+miss.length+' 个）</b>'+
+    '<div style="opacity:.78;line-height:2;word-break:break-all">'+(miss.length?miss.join(' '):'全都认会啦 🎉')+'</div>'+
+    (errs.length? '<div style="margin-top:8px"><b>点错最多的音（声母 / 韵母 / 声调）</b>'+
+      '<div style="opacity:.78;line-height:2;word-break:break-all">'+
+      errs.slice(0,20).map(function(k){ return k+'（'+S.prog.err[k]+'次）'; }).join(' ')+
+      '</div></div>':'')+'</div>';
+  sc.appendChild(wk);
+  var row=document.createElement('div');
+  row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='8px'; row.style.marginTop='12px';
+  var b1=document.createElement('button'); b1.className='btn'; b1.textContent='📋 复制进度文本'; b1.style.flex='1 1 46%';
+  b1.onclick=function(){ copyProgress(); };
+  var b2=document.createElement('button'); b2.className='btn';
+  b2.textContent = IS_WX ? '📋 生成长按复制文本' : '💾 导出 txt 留存';
+  b2.style.flex='1 1 46%';
+  b2.onclick=function(){ dlProgress(); };
+  var b3=document.createElement('button'); b3.className='btn'; b3.textContent='🔁 只练还没认会的字'; b3.style.flex='1 1 100%';
+  b3.onclick=function(){ document.getElementById('panel').classList.add('hide'); startReview(); };
+  var b4=document.createElement('button'); b4.className='btn'; b4.textContent='🔥 只练点错过的音'; b4.style.flex='1 1 100%';
+  b4.onclick=function(){ document.getElementById('panel').classList.add('hide'); startReviewErr(); };
+  row.appendChild(b1); row.appendChild(b2); row.appendChild(b3); row.appendChild(b4); sc.appendChild(row);
+  var t2=document.createElement('div'); t2.className='tip'; t2.style.marginTop='10px';
+  t2.innerHTML = IS_WX
+    ? '进度存在<b>这台手机/这台浏览器</b>里，换设备或清缓存会丢 —— 微信里点「生成长按复制文本」，长按文本框即可复制进度发给家长。'
+    : '进度存在<b>这台手机/这台浏览器</b>里，换设备或清缓存会丢 —— 重要记录建议点「导出 txt」留一份发家长。';
+  sc.appendChild(t2);
+  document.getElementById('panelExtra').innerHTML=
+    '<div class="tip" style="text-align:right"><button class="btn" id="btnBackLv">← 返回关卡列表</button></div>';
+  var bl=document.getElementById('btnBackLv');
+  if(bl) bl.onclick=function(){ Sfx.click(); openLevels(); };
+  document.getElementById('panel').classList.remove('hide');
+}
+function progressText(){
+  var d=new Date();
+  var zDone=ZI.filter(function(z){ return S.prog.known[z[0]]; }).length;
+  var passedC=LEVELS.filter(function(L,i){ return S.prog.passed[i]; }).length;
+  var miss=ziMiss();
+  var errs=Object.keys(S.prog.err||{}).sort(function(a,b){ return (S.prog.err[b]||0)-(S.prog.err[a]||0); }).slice(0,20);
+  var out=['黑洞入侵 · 拼音大作战　学习进度',
+    '日期：'+d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2),'',
+    '⭐ 星星：'+S.prog.stars+'　　通关：'+passedC+'/'+LEVELS.length+' 关　　已认汉字：'+zDone+'/'+ZI.length,
+    '难度：'+(diffOn().emo+' '+diffOn().name),'','【各关认字情况】'];
+  LEVELS.forEach(function(lv,i){
+    if(lv.type!=='zi'){ out.push((i+1)+'. '+lv.name+'　'+(S.prog.passed[i]?'已通关':'-')); return; }
+    var q=levelDone(lv);
+    out.push((i+1)+'. '+lv.name+'　'+q.done+'/'+q.total+' '+diffStar(lv.diff)+(q.done>=q.total?'　✅':''));
+  });
+  out.push('','【还没认会的字 '+miss.length+' 个】', miss.length?miss.join(' '):'（已全部认会）');
+  if(errs.length) out.push('','【点错最多的音】', errs.map(function(k){ return k+'('+S.prog.err[k]+')'; }).join(' '));
+  return out.join('\n');
+}
+function copyProgress(){
+  var t=progressText(), done=function(){ toast('进度已复制，粘贴留存或发家长', 2.6); };
+  function fb(){
+    try{
+      var ta=document.createElement('textarea');
+      ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta); done();
+    }catch(e){ toast('复制失败，请改用「导出 txt」', 2.6); }
+  }
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(done, fb);
+    } else fb();
+  }catch(e){ fb(); }
+}
+function dlProgress(){
+  if(IS_WX){ showWxProgressCopy(); return; }   // 微信不支持下载，改成长按复制，避免弹「外部浏览器」
+  try{
+    var t=progressText();
+    var blob=new Blob(['\ufeff'+t], {type:'text/plain;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='拼音学习进度-'+Date.now()+'.txt';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a); }catch(e){} }, 1500);
+    toast('已导出 txt（没看到请查下载/文件目录）', 2.8);
+  }catch(e){ toast('导出失败，可用「复制进度文本」', 2.6); }
+}
+
+/* 微信专用：把进度文本放进可长按复制的文本框（微信 WebView 不支持文件下载，
+   触发 <a download> 必弹「请在外部浏览器打开」，所以改走原生长按复制）。 */
+function showWxProgressCopy(){
+  var t=progressText();
+  var box=document.getElementById('wxProgressBox');
+  if(!box){
+    box=document.createElement('div'); box.id='wxProgressBox'; box.className='tip'; box.style.marginTop='10px';
+    var ta=document.createElement('textarea'); ta.id='wxProgressArea'; ta.readOnly=true;
+    ta.style.cssText='width:100%;height:172px;font-size:13px;line-height:1.65;color:#eaf0ff;'+
+      'background:rgba(0,0,0,.28);border:1px solid rgba(140,170,255,.35);border-radius:12px;padding:10px;'+
+      'resize:none;box-sizing:border-box;user-select:text;-webkit-user-select:text';
+    box.appendChild(ta);
+    var hint=document.createElement('div');
+    hint.style.cssText='font-size:12px;opacity:.82;margin-top:7px;text-align:center;line-height:1.5';
+    hint.textContent='↑ 长按上面文本框「全选」并「复制」，就能把进度粘贴发给家长（微信不支持直接导出文件）';
+    box.appendChild(hint);
+    document.getElementById('panelScroll').appendChild(box);
+  }
+  var ta=document.getElementById('wxProgressArea');
+  ta.value=t;
+  try{ ta.focus(); ta.select(); }catch(e){}
+  toast('已生成进度文本，长按可复制发给家长', 3);
+}
+
+// 只把还没认会的字重新摆一关（临时关，不计入通关记录）
+function startReview(){
+  var miss=ziMiss();
+  if(!miss.length){ toast('300 个字全认会啦，太棒了！', 3); return; }
+  Sfx.ac(); Sound.unlock();
+  startLevel(S.li, {name:'复习 · 还没认会的字（'+miss.length+'）', type:'zi',
+    set:miss, diff:1, tmp:true, tip:'这些是还没认会的字，再战一轮！认一个少一个。'});
+}
+/* 点错过的音 · 专项练习（2026-10-10）
+   prog.err 的 key 是声母 / 韵母 / 声调 —— bumpErr 只在拼读关的两个错答分支里被调用
+   （识字关、自由认读关点中就算对，不记错），所以 err 里永远是拼音片段，不会是汉字。
+   因此这里不自己拼 sm+ym 造题（容易拼出无效音节、找不到音频），
+   而是从现成拼读关配好的题目里挑「命中点错音」的题来练：题目自带 sm+ym+t+zi+em，零构造风险。 */
+function startReviewErr(){
+  var err=S.prog.err||{}, keys=Object.keys(err);
+  if(!keys.length){ toast('还没有点错记录 —— 先玩几关拼读再来复习吧～', 3); return; }
+  var pool=[];
+  LEVELS.forEach(function(L){
+    if(L.type!=='spell'||!L.tasks) return;
+    L.tasks.forEach(function(t){
+      var w=(err[t.sm]||0)+(err[t.ym]||0)+(err['tone'+t.t]||0);
+      if(w>0) pool.push({t:t, w:w});
+    });
+  });
+  if(!pool.length){ toast('点错的音还没出现在拼读关里，先玩几关拼读吧～', 3); return; }
+  pool.sort(function(a,b){ return b.w-a.w; });          // 错得越多的音排越前
+  var seen={}, tasks=[];
+  pool.forEach(function(p){
+    var k=p.t.sm+'|'+p.t.ym+'|'+p.t.t;                  // 按音节去重（同一题可能在多个拼读关出现）
+    if(seen[k]) return; seen[k]=1;
+    if(tasks.length<8) tasks.push(p.t);
+  });
+  var hasTone=keys.some(function(k){ return /^tone/.test(k); });   // 错过声调才考声调
+  Sfx.ac(); Sound.unlock();
+  startLevel(S.li, {name:'复习 · 点错过的音（'+tasks.length+' 题）', type:'spell', tone:!!hasTone,
+    tasks:tasks, diff:1, tmp:true,
+    tip:'这些都是你以前点错的音，听清楚再喂黑洞 —— 慢一点也没关系！'});
+}
+
+function closePanel(){ document.getElementById('panel').classList.add('hide'); }
+document.getElementById('panelClose').onclick=closePanel;
+
+document.getElementById('btnMenu').onclick=function(){ Sfx.click(); openLevels(); };
+document.getElementById('btnSet').onclick=function(){ Sfx.click(); openSettings(); };
+document.getElementById('btnVoice').onclick=function(){
+  S.voiceOn=!S.voiceOn; this.classList.toggle('on',S.voiceOn);
+  this.textContent=S.voiceOn?'🔊':'🔇';
+  if(S.voiceOn){ Sound.unlock(); Sound.say('声音打开了','声音打开了'); Sound.assertVoice('声音打开了',0.85); } else speechSynthesis&&speechSynthesis.cancel();
+};
+document.getElementById('btnStart').onclick=function(){
+  Sfx.ac(); Sound.unlock(); Voice.init();
+  var first=0; for(var i=0;i<LEVELS.length;i++){ if(!S.prog.passed[i]){ first=i; break; } first=i; }
+  resize(); startLevel(first);
+};
+document.getElementById('btnTeacher').onclick=function(){ Sfx.click(); openSettings(); };
+document.getElementById('btnProgStart').onclick=function(){ Sfx.click(); openProgress(); };
+document.getElementById('btnDiffStart').onclick=function(){ Sfx.click(); openDiff(); };
+document.getElementById('btnClean').onclick=function(){
+  if(!confirm('会清掉浏览器缓存并重新加载最新版（学习进度不会丢）。\n\n如果是在微信里打开的，请点「确定」后回到微信聊天栏，下拉刷新一次也能拿到新版。\n\n确定继续吗？')) return;
+  clearCacheThenReload();
+};
+document.getElementById('btnCopyLink').onclick=function(){ Sfx.click(); copyNewLink(); };
+document.getElementById('btnNext').onclick=function(){
+  Sfx.click(); resize(); startLevel(Math.min(LEVELS.length-1,S.li+1));
+};
+document.getElementById('btnRetry').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };
+document.getElementById('btnRedo').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };  // 关内随时重来本关
+document.getElementById('btnBack2').onclick=function(){ Sfx.click(); document.getElementById('winMask').classList.add('hide'); openLevels(); };
+
+/* ---------- 13. 启动 ---------- */
+resize();
+Voice.init();
+requestAnimationFrame(loop);
+
+/* ---------- 11. 防缩放 / 防跑偏 ----------
+   Android 微信内核会忽略 viewport 的 user-scalable=no，
+   双指一缩或误触缩放，画面右半边就会被挤到屏幕外（表现为“显示不全”）。
+   这里用 JS 把缩放强行钉死在 1。 */
+(function(){
+  var vv=window.visualViewport;
+  function pin(){ try{ if(vv && vv.scale!==1) vv.scale=1; }catch(e){} }
+  if(vv){ try{ vv.addEventListener('resize', pin); vv.addEventListener('scroll', pin); }catch(e){} }
+  document.addEventListener('gesturestart', function(e){ e.preventDefault(); }, {passive:false});
+  document.addEventListener('gesturechange', function(e){ e.preventDefault(); }, {passive:false});
+  document.addEventListener('dblclick', function(e){ e.preventDefault(); }, {passive:false});
+  document.addEventListener('touchmove', function(e){
+    try{ if(e.touches && e.touches.length>1) e.preventDefault(); }catch(err){}
+  }, {passive:false});
+  document.addEventListener('touchstart', function(e){
+    try{ if(e.touches && e.touches.length>1) e.preventDefault(); }catch(err){}
+  }, {passive:false});
+  // 兜底：任何情况下 body 都不允许横向溢出
+  function killHScroll(){
+    try{ document.body.scrollLeft=0; document.documentElement.scrollLeft=0; }catch(e){}
+  }
+  window.addEventListener('scroll', killHScroll);
+  setTimeout(killHScroll, 300); setTimeout(killHScroll, 900);
+})();
+</script>
+</body>
+</html>
