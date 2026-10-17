@@ -702,7 +702,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v10';
+var BUILD = 'v11';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1974,7 +1974,7 @@ function drawPlanet(g,p,dt){
     if(p.y<ARENA.y0+p.r){ p.y=ARENA.y0+p.r; p.vy=Math.abs(p.vy); }
     if(p.y>ARENA.y1-p.r){ p.y=ARENA.y1-p.r; p.vy=-Math.abs(p.vy); }
   }
-  // 与黑洞距离过近时轻微逃离（避免误吞），拼读关目标星球除外
+  // 与黑洞距离过近时轻微逃离（仅作视觉点缀；真正「防误吞」靠下面的目标捕获判定），拼读关目标星球除外
   // 逃逸力度随黑洞成长等比放大：黑洞越大吸力越强，卡片也要「跑得更快」才不被顺手吃掉
   var b=S.bh, d=Math.hypot(b.x-p.x,b.y-p.y);
   var isTarget = (b.tgt===p);
@@ -1983,6 +1983,10 @@ function drawPlanet(g,p,dt){
     var f=(1-d/(b.r+p.r+46))*36*dt*growK;
     p.x += (p.x-b.x)/(d||1)*f; p.y += (p.y-b.y)/(d||1)*f;
   }
+  // 硬约束：漂移 / 逃逸 / 平滑换位之后，星球中心必须留在可视场地内。
+  // 否则逃逸会把卡片推到顶栏背后或画面外「一直回不来」，黑洞也吃不到（修复漂移出界）。
+  p.x=Math.max(ARENA.x0+p.r, Math.min(ARENA.x1-p.r, p.x));
+  p.y=Math.max(ARENA.y0+p.r, Math.min(ARENA.y1-p.r, p.y));
   // 目标高亮
   var needGlow=false;
   if(S.level && S.level.type==='spell' && S.hintOn && diffOn().hint){
@@ -2068,11 +2072,14 @@ function drawPlanet(g,p,dt){
   }
   g.restore();
 
-  // 被黑洞触碰 → 开始捕获
-  if(S.bh && inS>0.9 && d < S.bh.r*0.72 + p.r*0.2){
+  // 被黑洞触碰 → 仅捕获「当前目标」星球（玩家真正点中的那张）。
+  // 移动黑洞 / 飞越卡片堆时，绝不顺手吞掉一串，保证「一次只吃一个」。
+  // d 用硬约束后的真实位置重算，避免边界处误判。
+  d=Math.hypot(S.bh.x-p.x, S.bh.y-p.y);
+  if(S.bh && inS>0.9 && S.bh.tgt===p && d < S.bh.r*0.72 + p.r*0.2){
     p.st='capturing'; p.cap=0;
     p.cr0=Math.max(d, p.r*0.5); p.ca0=Math.atan2(p.y-S.bh.y, p.x-S.bh.x);
-    if(S.bh.tgt===p) S.bh.tgt=null;
+    S.bh.tgt=null;
   }
 }
 
@@ -2116,13 +2123,13 @@ function drawToneBall(g,p,dt){ // 声调球：固定位置，不漂移
   g.font='600 '+(r*0.32)+'px "PingFang SC","Microsoft YaHei",sans-serif';
   g.fillText(p.name, 0, r*0.52);
   g.restore();
-  // 被黑洞触碰 → 捕获
+  // 被黑洞触碰 → 仅捕获目标声调球（移动黑洞不会顺手吃掉）
   if(b){
     var d=Math.hypot(b.x-p.x, b.y-p.y);
-    if(d < b.r*0.72 + p.r*0.2){
+    if(isTarget && d < b.r*0.72 + p.r*0.2){
       p.st='capturing'; p.cap=0;
       p.cr0=Math.max(d,p.r*0.5); p.ca0=Math.atan2(p.y-b.y, p.x-b.x);
-      if(b.tgt===p) b.tgt=null;
+      b.tgt=null;
     }
   }
 }
