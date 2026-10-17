@@ -220,6 +220,30 @@
 <body>
 <canvas id="stage"></canvas>
 
+<div id="splash">
+  <style>
+    #splash{position:fixed;inset:0;z-index:9999;background:radial-gradient(circle at 50% 38%,#1a2350,#05060f);
+      display:flex;align-items:center;justify-content:center;transition:opacity .5s ease;font-family:"Segoe UI",Arial,"Microsoft YaHei",sans-serif}
+    #splash.hide{opacity:0;pointer-events:none}
+    #splash .si{text-align:center;color:#eaf0ff}
+    #splash .emo{font-size:64px;animation:spf 2.4s ease-in-out infinite}
+    #splash .ti{font-size:22px;font-weight:800;margin-top:10px}
+    #splash .sp{width:34px;height:34px;margin:18px auto 6px;border:3px solid rgba(255,255,255,.2);border-top-color:#8aa6ff;border-radius:50%;animation:spn 1s linear infinite}
+    #splash .tp{font-size:14px;opacity:.8}
+    #splash .hn{font-size:12px;opacity:0;margin-top:14px;max-width:280px;line-height:1.6;color:#cdd6ff;animation:fdin 1s ease 6s forwards}
+    @keyframes spn{to{transform:rotate(360deg)}}
+    @keyframes spf{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+    @keyframes fdin{to{opacity:.62}}
+  </style>
+  <div class="si">
+    <div class="emo">🕳️</div>
+    <div class="ti">黑洞入侵 · 拼音大作战</div>
+    <div class="sp"></div>
+    <div class="tp">正在点亮拼音星系…</div>
+    <div class="hn">若长时间未进入，可能是网络较慢。可点右上角「…」选择「在浏览器打开」，或下拉刷新重试。</div>
+  </div>
+</div>
+
 <header id="topbar" class="ui">
   <button class="btn" id="btnMenu">☰ 关卡</button>
   <div id="lvBox">
@@ -253,6 +277,9 @@
     <div class="row" style="margin-top:10px">
       <button class="btn" id="btnProgStart">📊 家长看进度</button>
       <button class="btn" id="btnDiffStart">🎚 难度分层</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="btnMistake">📕 错题本</button>
     </div>
     <div class="row" style="margin-top:8px">
       <button class="btn" id="btnClean" style="font-size:13px;opacity:.9">🧹 清理缓存 · 用最新版</button>
@@ -649,7 +676,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v8';
+var BUILD = 'v9';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -820,9 +847,10 @@ var Sound = {
     Voice.payPending=false;      // 本次走的是本地/在线音频包，不欠在线合成这一环
     // 汉字 = 识字关星球 / 拼读结果。走本地音频包（离线预生成的 mp3）：
     // 不依赖浏览器 TTS，也不调第三方在线接口——微信/QQ 内置浏览器里也保证一点就响。
-    if(/[\u4e00-\u9fa5]/.test(String(id).charAt(0))){
-      if(this.cache[id] && !this.bad[id]){ this.go(this.cache[id]); return; }
-      var self2=this, zf=this.ziFile(id), ze=new Audio();
+  if(/[\u4e00-\u9fa5]/.test(String(id).charAt(0))){
+    if(this.cache[id] && !this.bad[id]){ this.go(this.cache[id]); return; }
+    if(!ZI_AUDIO[id]){ sayUnknown(id, t); return; }   // 自定义 / 未知汉字：优先离线 blob，否则在线合成
+    var self2=this, zf=this.ziFile(id), ze=new Audio();
       ze.preload='auto';
       ze.oncanplay=function(){ self2.cache[id]=ze; };
       ze.onerror=function(){                    // 本地包缺失（极少见）-> 在线合成 -> 本机语音
@@ -884,6 +912,83 @@ var Sound = {
     }, 560);
   }
 };
+
+/* ---------- 3.55 自定义字离线音频缓存（IndexedDB） ----------
+   自定义字不在本地 303 条 mp3 包里。导入时预热在线合成音（填 HTTP 缓存，首播即响、同设备可能离线），
+   并尝试验证跨域抓取成 blob 存 IndexedDB：若源站允许 CORS 则真正离线可用；否则 fetch 被拦、静默失败，
+   回退到「在线合成音」（联网即响，微信 WebView 也支持跨域媒体播放）。绝不依赖系统 TTS 兜底。 */
+var AudioCache = {
+  db:null,
+  open:function(){
+    var self=this;
+    return new Promise(function(res){
+      if(self.db){ res(self.db); return; }
+      try{
+        if(!('indexedDB' in window)){ res(null); return; }
+        var rq=indexedDB.open('bhpy_audio', 1);
+        rq.onupgradeneeded=function(e){ var db=e.target.result; if(db && !db.objectStoreNames.contains('audio')) db.createObjectStore('audio'); };
+        rq.onsuccess=function(e){ self.db=e.target.result; res(self.db); };
+        rq.onerror=function(){ res(null); };
+      }catch(e){ res(null); }
+    });
+  },
+  put:function(key, blob){
+    var self=this;
+    return self.open().then(function(db){
+      if(!db) return false;
+      return new Promise(function(res){
+        try{
+          var tx=db.transaction('audio','readwrite');
+          tx.objectStore('audio').put(blob, key);
+          tx.oncomplete=function(){ res(true); };
+          tx.onerror=function(){ res(false); };
+        }catch(e){ res(false); }
+      });
+    });
+  },
+  get:function(key){
+    var self=this;
+    return self.open().then(function(db){
+      if(!db) return null;
+      return new Promise(function(res){
+        try{
+          var tx=db.transaction('audio','readonly');
+          var rq=tx.objectStore('audio').get(key);
+          rq.onsuccess=function(){ res(rq.result||null); };
+          rq.onerror=function(){ res(null); };
+        }catch(e){ res(null); }
+      });
+    });
+  }
+};
+function warmCustomAudio(chars){
+  (chars||[]).forEach(function(c){
+    if(ZI_AUDIO[c]) return;                     // 本地包已有，无需预热
+    var url=Sound.online(ZI_TS[c]||c);
+    try{ var a=new Audio(); a.preload='auto'; a.src=url; }catch(e){}   // 预热 HTTP 缓存
+    try{                                         // 尝试抓 blob 离线存（CORS 通不过则静默失败）
+      fetch(url).then(function(r){ return (r && r.ok) ? r.blob() : null; }).then(function(b){
+        if(b && b.size) AudioCache.put(c, b);
+      }).catch(function(){});
+    }catch(e){}
+  });
+}
+function sayUnknown(id, text){                    // 自定义 / 未知汉字：优先离线 blob，否则在线合成
+  var self=Sound, t=String(text||id);
+  AudioCache.get(id).then(function(blob){
+    try{
+      if(blob && blob.size){
+        var u=URL.createObjectURL(blob), a=new Audio(); a.preload='auto';
+        a.onerror=function(){ self.goOnline(ZI_TS[t]||t); };
+        a.src=u; self.go(a); return;
+      }
+    }catch(e){}
+    var ze=new Audio(); ze.preload='auto';
+    ze.oncanplay=function(){ self.cache[id]=ze; };
+    ze.onerror=function(){ self.goOnline(ZI_TS[t]||t); };
+    ze.src=''; self.go(ze);                       // 空 src 触发 onerror -> 在线合成
+  });
+}
 
 /* ---------- 3.6 缓存清理：微信 / QQ 内置浏览器缓存极硬 ----------
    微信里同一条链接可能把旧版 index.html 和旧 audio/*.mp3 缓存好几周，
@@ -1188,7 +1293,7 @@ function warmList(){ // 本关需要预热的音频 key
   var out=[];
   if(S.level.type==='free'){ S.level.set.forEach(function(id){ out.push(akey(id)); }); }
   else if(S.level.type==='zi'){
-    S.level.set.forEach(function(id){ if(ZI_AUDIO[id]) out.push(id); });   // 汉字本地音频包
+    S.level.set.forEach(function(id){ out.push(id); });   // 汉字本地音频包（含自定义字在线预热）
     S.level.set.forEach(function(id){ out.push(PIN[id]?PIN[id].say:id); });  // 兜底（缺包时用）
   }
   else{
@@ -2218,9 +2323,10 @@ function doImport(){
   });
   var box=document.getElementById('importMsg');
   if(!entries.length){ if(box) box.textContent='没识别到汉字，请检查输入格式。'; return; }
-  CUSTOM=entries; ensureCustomPin();
+  CUSTOM=entries; ensureCustomPin(); warmCustomAudio(entries.map(function(e){ return e.zi; }));
   try{ localStorage.setItem('bhpy_custom', JSON.stringify(CUSTOM)); }catch(e){}
   var msg='已生成 '+Math.ceil(entries.length/10)+' 个专属关卡（共 '+entries.length+' 字）！去「关卡地图」底部查看。';
+  msg+='\n🎧 已为这些字预热发音（联网即响；部分设备可离线）。';
   if(skipped.length) msg+='\n⚠️ 以下字没查到拼音已跳过：'+skipped.join(' ')+'（可写成「字 拼音」补上，如 鑫 xīn）';
   if(box) box.textContent=msg;
   toast('导入成功，去关卡地图看看吧', 3);
@@ -2244,10 +2350,12 @@ function openLevels(){
   var top=document.createElement('div'); top.className='lvtop';
   top.innerHTML='<div class="lvtop-stats">累计 ⭐ <b>'+S.prog.stars+'</b>　通关 <b>'+passedC+'/'+LEVELS.length+'</b>　认字 <b>'+zDone+'/'+zTotal+'</b>　难度 <b>'+dk.emo+' '+dk.name+'</b></div>'+
     '<button class="btn" id="btnWeakMiss">🔁 没认会的字</button>'+
-    '<button class="btn" id="btnWeakErr">🔥 点错过的音</button>';
+    '<button class="btn" id="btnWeakErr">🔥 点错过的音</button>'+
+    '<button class="btn" id="btnMistake">📕 错题本</button>';
   sc.appendChild(top);
   var bw1=document.getElementById('btnWeakMiss'); if(bw1) bw1.onclick=function(){ Sfx.click(); closePanel(); startReview(); };
   var bw2=document.getElementById('btnWeakErr'); if(bw2) bw2.onclick=function(){ Sfx.click(); closePanel(); startReviewErr(); };
+  var bw3=document.getElementById('btnMistake'); if(bw3) bw3.onclick=function(){ Sfx.click(); openMistakeBook(); };
   // 正式关卡地图（网格节点 + 解锁态 + 星级）
   var map=document.createElement('div'); map.className='lvmap'; sc.appendChild(map);
   LEVELS.forEach(function(L,i){
@@ -2535,6 +2643,47 @@ function showWxProgressCopy(){
   toast('已生成进度文本，长按可复制发给家长', 3);
 }
 
+/* ---------- 12b. 常驻错题本（v9 新增） ----------
+   基于 S.prog.err（点错过的音，按次数排序）与 ziMiss（未认会字）做持久清单，
+   提供「复习点错的音 / 复习未认会字」两个入口，复用既有 startReviewErr / startReview。 */
+function openMistakeBook(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='错题本';
+  sc.innerHTML='';
+  var err=S.prog.err||{}, keys=Object.keys(err).sort(function(a,b){ return (err[b]||0)-(err[a]||0); });
+  var miss=ziMiss();
+  var sum=document.createElement('div'); sum.className='tip';
+  sum.innerHTML='点错过的音 <b>'+(keys.length)+'</b> 个　还没认会的字 <b>'+(miss.length)+'</b> 个';
+  sc.appendChild(sum);
+  if(keys.length){
+    var hd=document.createElement('div'); hd.className='tip'; hd.style.marginTop='6px';
+    hd.innerHTML='<b>点错最多的音（点一下可试听）</b>'; sc.appendChild(hd);
+    keys.slice(0,30).forEach(function(k){
+      var label = k.indexOf('tone')===0 ? ('第'+k.replace('tone','')+'声') : k;
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:7px 2px;border-bottom:1px dashed rgba(255,255,255,.12)';
+      row.innerHTML='<span style="font-size:16px">'+label+'</span><span style="opacity:.7;font-size:13px">错 '+(err[k]||0)+' 次</span>';
+      row.onclick=function(){
+        Sfx.click();
+        if(PIN[k]) Sound.say(PIN[k].say, k);
+        else if(k.indexOf('tone')===0){ var d=TONE_DEMO[parseInt(k.replace('tone',''),10)-1]; if(d) Sound.say(d.say, d.say); }
+      };
+      sc.appendChild(row);
+    });
+  } else {
+    var ne=document.createElement('div'); ne.className='tip'; ne.textContent='还没有点错记录，棒！先玩几关拼读关吧。'; sc.appendChild(ne);
+  }
+  var row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap';
+  var b1=document.createElement('button'); b1.className='btn'; b1.textContent='🔥 复习点错的音'; b1.style.flex='1 1 46%';
+  b1.onclick=function(){ closePanel(); startReviewErr(); };
+  var b2=document.createElement('button'); b2.className='btn'; b2.textContent='🔁 复习未认会字'; b2.style.flex='1 1 46%';
+  b2.onclick=function(){ closePanel(); startReview(); };
+  row.appendChild(b1); row.appendChild(b2); sc.appendChild(row);
+  document.getElementById('panelExtra').innerHTML='<div class="tip" style="text-align:right"><button class="btn" id="btnBackLv">← 返回关卡列表</button></div>';
+  var bl=document.getElementById('btnBackLv'); if(bl) bl.onclick=function(){ Sfx.click(); openLevels(); };
+  document.getElementById('panel').classList.remove('hide');
+}
+
 /* 家长进度长图（v8 新增）：用 Canvas 画一张竖版报告图，转成 <img> 插进家长面板。
    微信里长按 <img> 可以直接「保存到相册 / 发送给朋友」，比复制文本更适合发班级群。
    数据全用已有进度（星星 / 通关 / 认字 / 各难度 / 薄弱字），纯前端、零后端。 */
@@ -2673,6 +2822,7 @@ document.getElementById('btnStart').onclick=function(){
 };
 document.getElementById('btnTeacher').onclick=function(){ Sfx.click(); openSettings(); };
 document.getElementById('btnProgStart').onclick=function(){ Sfx.click(); openProgress(); };
+document.getElementById('btnMistake').onclick=function(){ Sfx.click(); openMistakeBook(); };
 document.getElementById('btnDiffStart').onclick=function(){ Sfx.click(); openDiff(); };
 document.getElementById('btnClean').onclick=function(){
   if(!confirm('会清掉浏览器缓存并重新加载最新版（学习进度不会丢）。\n\n如果是在微信里打开的，请点「确定」后回到微信聊天栏，下拉刷新一次也能拿到新版。\n\n确定继续吗？')) return;
@@ -2690,6 +2840,8 @@ document.getElementById('btnBack2').onclick=function(){ Sfx.click(); document.ge
 resize();
 Voice.init();
 requestAnimationFrame(loop);
+var __sp=document.getElementById('splash');
+if(__sp){ setTimeout(function(){ __sp.classList.add('hide'); setTimeout(function(){ try{ __sp.remove(); }catch(e){} }, 600); }, 380); }
 
 /* ---------- 11. 防缩放 / 防跑偏 ----------
    Android 微信内核会忽略 viewport 的 user-scalable=no，
