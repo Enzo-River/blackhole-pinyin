@@ -702,7 +702,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v12';
+var BUILD = 'v13';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1243,6 +1243,13 @@ function layout(){
     p.x=Math.max(ARENA.x0+p.r, Math.min(ARENA.x1-p.r, p.x));
     p.y=Math.max(ARENA.y0+p.r, Math.min(ARENA.y1-p.r, p.y));
   });
+  // 横竖屏切换后，黑洞若仍停在旧坐标系位置会跑到屏外 → 一并夹回可视场地
+  if(S.bh){
+    var r2=S.bh.r*0.2;
+    S.bh.x=Math.max(ARENA.x0+r2, Math.min(ARENA.x1-r2, S.bh.x));
+    S.bh.y=Math.max(ARENA.y0+r2, Math.min(ARENA.y1-r2, S.bh.y));
+    if(S.bh.tx!==undefined){ S.bh.tx=Math.max(0,Math.min(W,S.bh.tx)); S.bh.ty=Math.max(0,Math.min(H,S.bh.ty)); }
+  }
 }
 
 /* ---------- 7. 生成星球 ---------- */
@@ -1933,6 +1940,10 @@ function drawShapeDeco(g, shape, r){
   }
 }
 
+function anyCapturing(){ // 同一时刻只允许吃一张卡：避免「移动黑洞顺手吞一串」与被动漂移误吞
+  for(var i=0;i<S.planets.length;i++){ if(S.planets[i].st==='capturing') return true; }
+  return false;
+}
 function drawPlanet(g,p,dt){
   if(p.kind==='tone'){ drawToneBall(g,p,dt); return; }
   p.spin+=dt*0.4;
@@ -1974,12 +1985,13 @@ function drawPlanet(g,p,dt){
     if(p.y<ARENA.y0+p.r){ p.y=ARENA.y0+p.r; p.vy=Math.abs(p.vy); }
     if(p.y>ARENA.y1-p.r){ p.y=ARENA.y1-p.r; p.vy=-Math.abs(p.vy); }
   }
-  // 与黑洞距离过近时轻微逃离（仅作视觉点缀；真正「防误吞」靠下面的目标捕获判定），拼读关目标星球除外
-  // 逃逸力度随黑洞成长等比放大：黑洞越大吸力越强，卡片也要「跑得更快」才不被顺手吃掉
+  // 与黑洞距离过近时轻微逃离：仅作视觉点缀。但「拖拽黑洞去吃这张卡」时绝不能推它，
+  // 否则卡片一边逃一边吃不到（用户反馈：移动黑洞压到汉字却吃不到）。目标卡同样不逃。
   var b=S.bh, d=Math.hypot(b.x-p.x,b.y-p.y);
   var isTarget = (b.tgt===p);
+  var dragging = !!b.drag;
   var growK = (b.rBase? b.r/b.rBase : 1);
-  if(d < b.r+p.r+46 && !isTarget){
+  if(d < b.r+p.r+46 && !isTarget && !dragging){
     var f=(1-d/(b.r+p.r+46))*36*dt*growK;
     p.x += (p.x-b.x)/(d||1)*f; p.y += (p.y-b.y)/(d||1)*f;
   }
@@ -2072,11 +2084,13 @@ function drawPlanet(g,p,dt){
   }
   g.restore();
 
-  // 被黑洞触碰 → 仅捕获「当前目标」星球（玩家真正点中的那张）。
-  // 移动黑洞 / 飞越卡片堆时，绝不顺手吞掉一串，保证「一次只吃一个」。
+  // 接触即捕获：两种入口都成立 —— (a) 玩家点中的目标卡（黑洞飞过去吃）；
+  // (b) 玩家「拖拽黑洞压到」这张卡（移动黑洞也能吃）。同一时刻只允许吃一张
+  // （anyCapturing 守卫），兼顾「拖拽可吃」与「不一次吞一串 / 不被动漂移误吞」。
   // d 用硬约束后的真实位置重算，避免边界处误判。
   d=Math.hypot(S.bh.x-p.x, S.bh.y-p.y);
-  if(S.bh && inS>0.9 && S.bh.tgt===p && d < S.bh.r*0.72 + p.r*0.2){
+  if(S.bh && inS>0.9 && (S.bh.tgt===p || S.bh.drag) && !anyCapturing()
+     && d < S.bh.r*0.78 + p.r*0.32){
     p.st='capturing'; p.cap=0;
     p.cr0=Math.max(d, p.r*0.5); p.ca0=Math.atan2(p.y-S.bh.y, p.x-S.bh.x);
     S.bh.tgt=null;
@@ -2123,10 +2137,10 @@ function drawToneBall(g,p,dt){ // 声调球：固定位置，不漂移
   g.font='600 '+(r*0.32)+'px "PingFang SC","Microsoft YaHei",sans-serif';
   g.fillText(p.name, 0, r*0.52);
   g.restore();
-  // 被黑洞触碰 → 仅捕获目标声调球（移动黑洞不会顺手吃掉）
+  // 声调球同样支持「拖拽黑洞压到即吃」，且同一时刻只吃一个（anyCapturing 守卫）
   if(b){
     var d=Math.hypot(b.x-p.x, b.y-p.y);
-    if(isTarget && d < b.r*0.72 + p.r*0.2){
+    if((isTarget || b.drag) && !anyCapturing() && d < b.r*0.78 + p.r*0.32){
       p.st='capturing'; p.cap=0;
       p.cr0=Math.max(d,p.r*0.5); p.ca0=Math.atan2(p.y-b.y, p.x-b.x);
       b.tgt=null;
@@ -2187,6 +2201,11 @@ function drawBH(g,b,dt,demo){
     var k=1-Math.pow(diffOn().spd,dt);   // 难度档决定黑洞追星的-speed
     b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
   }
+  // 黑洞必须留在可视场地内：否则拖到顶栏/底部卡后面就「找不到了」，
+  // 横竖屏切换后旧坐标也会跑到屏外，导致卡死（修复旋转后吃不到）。
+  var br2=b.r*0.2;
+  b.x=Math.max(ARENA.x0+br2, Math.min(ARENA.x1-br2, b.x));
+  b.y=Math.max(ARENA.y0+br2, Math.min(ARENA.y1-br2, b.y));
   // 成长：rBase 是开局基准半径，growT 记录「吃了几口」，r 平滑逼近目标半径
   if(b.rBase===undefined) b.rBase=b.r;
   if(b.growT===undefined) b.growT=0;
