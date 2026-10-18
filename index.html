@@ -702,7 +702,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v14';
+var BUILD = 'v15';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1222,13 +1222,16 @@ setTimeout(resize, 320);
 setTimeout(resize, 900);
 
 var ARENA={x0:0,y0:0,x1:0,y1:0};
+var GOAL_TOP=0;
 function layout(){
   var tb=document.getElementById('topbar'), go=document.getElementById('goal');
   var short=(H<720);
   var top=(tb?tb.offsetHeight:64)+(short?10:18);
   var gh=go?go.offsetHeight:104;
   var spell=S.level && S.level.type==='spell';
-  var bottom=gh+(spell?(short?60:96):(short?14:28));
+  // 拼读·声调关：底部只预留「声调条」薄薄一条（56/44），让声调球落在 ARENA 内、黑洞够得着。
+  // 普通拼读关仍留 96/60 不挤占星球区；非拼读关维持原样。
+  var bottom=gh+(spell?((S.level&&S.level.tone)?(short?44:56):(short?60:96)):(short?14:28));
   var side=Math.max(20,Math.min(W<720?48:64, W*(short?0.075:0.09)));
   // 场地保底高度：顶栏/底卡把屏幕挤扁时，优先压缩四周留白而不是让星球没地方放
   var need=Math.min(210, Math.max(120, H*0.34));
@@ -1239,6 +1242,7 @@ function layout(){
     if(room<need){ bottom=Math.max(40, bottom-(need-room)); }
   }
   ARENA={x0:side,y0:top+28,x1:W-side,y1:H-bottom};
+  GOAL_TOP=H-gh;   // 底栏顶部 y：声调关黑洞需进入「声调条」（ARENA.y1 与底栏之间）才够得到声调球
   S.planets.forEach(function(p){
     p.x=Math.max(ARENA.x0+p.r, Math.min(ARENA.x1-p.r, p.x));
     p.y=Math.max(ARENA.y0+p.r, Math.min(ARENA.y1-p.r, p.y));
@@ -1246,8 +1250,9 @@ function layout(){
   // 横竖屏切换后，黑洞若仍停在旧坐标系位置会跑到屏外 → 一并夹回可视场地
   if(S.bh){
     var r2=S.bh.r*0.2;
+    var yM=(S.level && S.level.type==='spell' && S.level.tone)?(GOAL_TOP-r2):(ARENA.y1-r2);
     S.bh.x=Math.max(ARENA.x0+r2, Math.min(ARENA.x1-r2, S.bh.x));
-    S.bh.y=Math.max(ARENA.y0+r2, Math.min(ARENA.y1-r2, S.bh.y));
+    S.bh.y=Math.max(ARENA.y0+r2, Math.min(yM, S.bh.y));
     if(S.bh.tx!==undefined){ S.bh.tx=Math.max(0,Math.min(W,S.bh.tx)); S.bh.ty=Math.max(0,Math.min(H,S.bh.ty)); }
   }
 }
@@ -1289,11 +1294,13 @@ function spawn(list){
   });
 }
 function toneBalls(){
-  // 声调球固定在拼读卡上方的轨道（仅拼读关）
+  // 声调球放在「声调条」中部（ARENA.y1 与底栏之间），半径收到 22 以内，
+  // 这样它既落在可视区内、黑洞夹到 ARENA 底部就能碰到，又不和上方声母/韵母卡重叠。
   var go=document.getElementById('goal');
   var gh=go?go.offsetHeight:104;
-  var y=H-gh-46, n=4, span=Math.min(W-140, 560), x0=(W-span)/2+span/(2*n);
-  var r=Math.max(H<720?17:22, Math.min(34,span/(2*n)+2));
+  var n=4, span=Math.min(W-140, 560), x0=(W-span)/2+span/(2*n);
+  var r=Math.max(H<720?15:18, Math.min(22,span/(2*n)+2));
+  var y=H-gh-28;
   return TONE_DEMO.map(function(t,i){
     return {id:'tone'+t.t, tone:t.t, mark:t.mark, name:t.name, say:t.say,
       kind:'tone', x:x0+i*span/n, y:y, r:r, st:'alive', cap:0, glow:0, spin:0};
@@ -2255,7 +2262,10 @@ function drawBH(g,b,dt,demo){
   // 横竖屏切换后旧坐标也会跑到屏外，导致卡死（修复旋转后吃不到）。
   var br2=b.r*0.2;
   b.x=Math.max(ARENA.x0+br2, Math.min(ARENA.x1-br2, b.x));
-  b.y=Math.max(ARENA.y0+br2, Math.min(ARENA.y1-br2, b.y));
+  // 普通关卡：黑洞夹到 ARENA 内；拼读·声调关：允许进入「声调条」（ARENA.y1 与底栏之间），
+  // 否则黑洞被夹在 ARENA 内、声调球在该条带里，永远够不到 → 声调选不上。
+  var yMax = (S.level && S.level.type==='spell' && S.level.tone) ? (GOAL_TOP-br2) : (ARENA.y1-br2);
+  b.y=Math.max(ARENA.y0+br2, Math.min(yMax, b.y));
   // 成长：rBase 是开局基准半径，growT 记录「吃了几口」，r 平滑逼近目标半径
   if(b.rBase===undefined) b.rBase=b.r;
   if(b.growT===undefined) b.growT=0;
