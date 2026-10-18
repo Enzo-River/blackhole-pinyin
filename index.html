@@ -702,7 +702,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v13';
+var BUILD = 'v14';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1099,7 +1099,7 @@ var Sfx = {
 var S = {
   scene:'start',
   li:0, level:null,
-  planets:[], bh:null, bgStars:[], parts:[],
+  planets:[], bh:null, bgStars:[], parts:[], rings:[],
   ti:0, step:0,            // spell 关：任务序号 / 0声母 1韵母 2声调
   got:null,                // 已拼部分
   eaten:{},                // free/zi 关已吃掉
@@ -1510,12 +1510,18 @@ cv.addEventListener('mousemove', onMove);
 cv.addEventListener('mouseup', onUp);
 
 /* ---------- 10. 吞噬结算 ---------- */
-/* 吃掉一张卡片 → 黑洞长大一点 + 内核闪一下（视觉上「吃得越多、越强」） */
+/* 吃掉一张卡片 → 黑洞长大 + 内核闪一下 + 「一口闷」放大冲击 + 扩散冲击环
+   （视觉上「吃得越多、越强」，并给孩子一个明确的「吞下去了」的即时回响） */
+function spawnEatRing(x,y,r0){
+  S.rings.push({x:x, y:y, t:0, life:0.55, r0:r0, r1:r0*3.6, c:'rgba(255,228,176,1)'});
+}
 function feedBH(n){
   var b=S.bh; if(!b) return;
   if(b.growT===undefined) b.growT=0;
-  b.growT=Math.min(0.5, b.growT+(n||0.04));
-  b.flash=1;                       // 触发内核闪白 + 视界环外扩
+  b.growT=Math.min(0.92, b.growT+(n||0.05));   // 每口都长得更明显，封顶更高（最大约 1.9 倍）
+  b.flash=1;                                   // 触发内核闪白 + 视界环外扩
+  b.punch=1;                                   // 「一口闷」的瞬时放大冲击
+  spawnEatRing(b.x, b.y, b.r*0.95);            // 从黑洞口扩散的冲击环
 }
 function onEaten(p){
   Sfx.swallow();
@@ -1698,6 +1704,9 @@ function draw(dt){
   });
   g.globalAlpha=1;
 
+  // 每帧安全网：任何「存活」卡片一旦跑到可视区外（旋转/地址栏伸缩导致 ARENA 滞后、
+  // 或 drawPlanet 提前 return 漏夹），立刻快速飞回屏幕中部，杜绝「卡在屏外吃不到」。
+  recoverStray();
   // 星球（存活）
   S.planets.forEach(function(p){ if(p.st==='alive') drawPlanet(g,p,dt); });
   // 黑洞
@@ -1717,6 +1726,18 @@ function draw(dt){
   }
   ps.length=w;
   g.globalAlpha=1;
+
+  // 吞噬冲击环（从黑洞口扩散，强化「一口闷下去」的反馈）
+  var rg=S.rings, rw=0;
+  for(var ri=0; ri<rg.length; ri++){
+    var z=rg[ri]; z.t+=dt; if(z.t>=z.life) continue;
+    rw++; rg[rw-1]=z;
+    var k=z.t/z.life, rr=z.r0+(z.r1-z.r0)*k;
+    g.globalAlpha=Math.max(0,1-k);
+    g.strokeStyle=z.c; g.lineWidth=Math.max(2, 9*(1-k));
+    g.beginPath(); g.arc(z.x,z.y,rr,0,6.283); g.stroke();
+  }
+  rg.length=rw; g.globalAlpha=1;
 
   // 上浮飘字（⭐+1 / 连击鼓励）
   var fl=S.floats, fw=0;
@@ -1944,6 +1965,34 @@ function anyCapturing(){ // 同一时刻只允许吃一张卡：避免「移动�
   for(var i=0;i<S.planets.length;i++){ if(S.planets[i].st==='capturing') return true; }
   return false;
 }
+/* 每帧安全网：把跑到可视区外的「存活」卡片快速拉回屏幕中部。
+   覆盖 drawPlanet 提前 return（重生/入场）漏夹、以及旋转/浏览器地址栏伸缩导致 ARENA
+   滞后等所有「卡在屏外吃不到」的情形。放在 draw() 里无条件每帧执行。*/
+function recoverStray(){
+  if(!ARENA || !S.bh) return;
+  var m=4, aw=ARENA.x1-ARENA.x0, ah=ARENA.y1-ARENA.y0;
+  for(var i=0;i<S.planets.length;i++){
+    var p=S.planets[i];
+    if(p.st!=='alive'){ continue; }
+    // NaN / 非有限坐标：直接瞬移回可视区中部（lerp 对 NaN 无效，必须先扶正）
+    if(!isFinite(p.x) || !isFinite(p.y)){
+      p.x=ARENA.x0+aw*0.5; p.y=ARENA.y0+ah*0.5; p.hx=undefined; p.hy=undefined; p.tx=undefined; p.vx=0; p.vy=0;
+      continue;
+    }
+    var off = p.x<m || p.x>W-m || p.y<m || p.y>H-m;
+    // 越界中、或正在执行回归插值（hx 仍有效）→ 持续把卡拉回可视区中部
+    if(off || p.hx!==undefined){
+      if(p.hx===undefined){               // 首次发现越界：目标定到可视区中部（带抖动，避免多卡叠在正中央）
+        p.hx=ARENA.x0+aw*0.5 + (Math.random()-0.5)*aw*0.44;
+        p.hy=ARENA.y0+ah*0.5 + (Math.random()-0.5)*ah*0.44;
+        p.tx=undefined; p.vx=0; p.vy=0;   // 取消平滑换位/漂移，交给回归插值，避免互相打架
+      }
+      p.x += (p.hx-p.x)*Math.min(1,0.22);
+      p.y += (p.hy-p.y)*Math.min(1,0.22);
+      if(Math.abs(p.hx-p.x)<3 && Math.abs(p.hy-p.y)<3){ p.x=p.hx; p.y=p.hy; p.hx=undefined; p.hy=undefined; }
+    }
+  }
+}
 function drawPlanet(g,p,dt){
   if(p.kind==='tone'){ drawToneBall(g,p,dt); return; }
   p.spin+=dt*0.4;
@@ -1991,7 +2040,8 @@ function drawPlanet(g,p,dt){
   var isTarget = (b.tgt===p);
   var dragging = !!b.drag;
   var growK = (b.rBase? b.r/b.rBase : 1);
-  if(d < b.r+p.r+46 && !isTarget && !dragging){
+  // 回归插值途中（hx 有效）不逃：否则会被黑洞推离，永远回不到屏幕中部
+  if(d < b.r+p.r+46 && !isTarget && !dragging && p.hx===undefined){
     var f=(1-d/(b.r+p.r+46))*36*dt*growK;
     p.x += (p.x-b.x)/(d||1)*f; p.y += (p.y-b.y)/(d||1)*f;
   }
@@ -2210,10 +2260,12 @@ function drawBH(g,b,dt,demo){
   if(b.rBase===undefined) b.rBase=b.r;
   if(b.growT===undefined) b.growT=0;
   if(b.flash===undefined) b.flash=0;
-  var wantR = b.rBase*(1+Math.min(0.62, b.growT));
+  if(b.punch===undefined) b.punch=0;
+  var wantR = b.rBase*(1+Math.min(0.92, b.growT));
   b.r += (wantR-b.r)*Math.min(1, dt*3.2);
   if(b.flash>0) b.flash=Math.max(0, b.flash-dt*2.4);
-  var R=b.r*(1+ (b.burst>0? b.burst*0.5:0));
+  if(b.punch>0) b.punch=Math.max(0, b.punch-dt*3.0);   // 「一口闷」冲击约 0.33s 回落
+  var R=b.r*(1+ (b.burst>0? b.burst*0.5:0) + b.punch*0.40);
   if(b.burst>0) b.burst=Math.max(0,b.burst-dt*1.2);
   // 长大越多内核越「沉」（由纯黑渐变到深紫黑），被吃的一瞬间闪一下
   var gv=Math.min(1, b.growT/0.62);
