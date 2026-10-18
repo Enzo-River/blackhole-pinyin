@@ -82,6 +82,24 @@
   .sw{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:14px}
   .tip{font-size:13px;opacity:.7;line-height:1.6;text-align:left;background:rgba(120,150,255,.08);
     border-radius:12px;padding:10px 12px;margin-top:10px}
+  /* ---- 书写练习（v16 新增）：田字格 + 笔顺动画 / 描红 ---- */
+  #writeBox{position:relative;width:min(74vw,300px);height:min(74vw,300px);
+    margin:10px auto 4px;border:2px solid rgba(255,209,102,.5);border-radius:10px;
+    background:#101634;touch-action:none;overflow:hidden}
+  #writeBox::before,#writeBox::after{content:'';position:absolute;background:rgba(255,209,102,.20);pointer-events:none}
+  #writeBox::before{left:50%;top:0;bottom:0;width:1px}
+  #writeBox::after{top:50%;left:0;right:0;height:1px}
+  #writeBox svg{display:block;width:100%;height:100%;touch-action:none}
+  .wzi{font-size:36px;font-weight:800;margin:2px 0 0;line-height:1.2}
+  .wpy{font-size:14px;opacity:.72;margin:1px 0}
+  .wstatus{font-size:13px;min-height:22px;opacity:.9;margin:6px 2px 0;line-height:1.5}
+  .wstatus.ok{color:#7dffc4}
+  .wstatus.warn{color:#ff9aa2}
+  .wgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+  .wcell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;
+    background:rgba(120,150,255,.12);border:1px solid rgba(150,180,255,.24);border-radius:12px;
+    cursor:pointer;color:#eaf0ff}
+  .wcell.done{background:rgba(120,255,200,.14);border-color:rgba(120,255,200,.4)}
   /* ---- 关卡地图（v8 新增）---- */
   .lvmap{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
   .lvsec{font-size:14px;font-weight:700;color:#ffd166;margin:14px 2px 2px;opacity:.95}
@@ -325,6 +343,20 @@
     <h1 style="font-size:22px" id="panelTitle">选择关卡</h1>
     <div id="panelScroll"></div>
     <div id="panelExtra"></div>
+  </div>
+</div>
+
+<!-- 书写练习：田字格 + 笔顺动画 / 描红跟着写（v16） -->
+<div class="mask hide" id="writeMask">
+  <div class="card" style="position:relative">
+    <span class="close" id="writeClose">✕</span>
+    <h1 style="font-size:20px" id="writeTitle">写一写</h1>
+    <div class="wzi" id="writeZi"></div>
+    <div class="wpy" id="writePy"></div>
+    <div id="writeBox"></div>
+    <div class="wstatus" id="writeStatus"></div>
+    <div class="row" id="writeRow"></div>
+    <div class="tip" id="writeTip">先点「看笔顺」看我写一遍，再点「我来写」用手指描一描。写错会提示，照着粉色提示线再来一次就好～</div>
   </div>
 </div>
 
@@ -702,7 +734,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v15';
+var BUILD = 'v16';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1554,6 +1586,15 @@ function onEaten(p){
     S.bh.label=p.py; S.bh.labelT=1.6;
     S.prog.stars++; saveProg(); updateTop(); updateGoal();   // 合并成一次落盘
     cheerPop(p.x,p.y);
+    // 笔顺自动演示（v16）：吃掉一个字后播一次该字笔顺，动画放完自动收起、不打断闯关。
+    // 每个字只在本次游戏里自动播一次，重玩不再打扰；设置里可关掉。
+    if(S.autoWrite!==false && hwSupport(p.zi||p.id) && !WRI.autoShown[p.zi||p.id]){
+      WRI.autoShown[p.zi||p.id]=1;
+      var _zi=p.zi||p.id, _py=p.py||'';
+      lvLater(function(){
+        openWrite(_zi, {py:_py, autoPlay:true, autoClose:true, hideTip:true, title:'笔顺 · '+_zi});
+      }, 620);
+    }
     var zleft=S.level.set.length-Object.keys(S.eaten).length;
     if(zleft<=0) lvLater(finish, 900);
     else if(zleft===3 || zleft===1) respread();     // 剩得少时重新散开，别挤成一堆
@@ -2467,11 +2508,13 @@ function openLevels(){
   top.innerHTML='<div class="lvtop-stats">累计 ⭐ <b>'+S.prog.stars+'</b>　通关 <b>'+passedC+'/'+LEVELS.length+'</b>　认字 <b>'+zDone+'/'+zTotal+'</b>　难度 <b>'+dk.emo+' '+dk.name+'</b></div>'+
     '<button class="btn" id="btnWeakMiss">🔁 没认会的字</button>'+
     '<button class="btn" id="btnWeakErr">🔥 点错过的音</button>'+
-    '<button class="btn" id="btnMistake">📕 错题本</button>';
+    '<button class="btn" id="btnMistake">📕 错题本</button>'+
+    '<button class="btn" id="btnWritePrac">✍ 书写练习</button>';
   sc.appendChild(top);
   var bw1=document.getElementById('btnWeakMiss'); if(bw1) bw1.onclick=function(){ Sfx.click(); closePanel(); startReview(); };
   var bw2=document.getElementById('btnWeakErr'); if(bw2) bw2.onclick=function(){ Sfx.click(); closePanel(); startReviewErr(); };
   var bw3=document.getElementById('btnMistake'); if(bw3) bw3.onclick=function(){ Sfx.click(); openMistakeBook(); };
+  var bw4=document.getElementById('btnWritePrac'); if(bw4) bw4.onclick=function(){ Sfx.click(); openWritePractice(); };
   // 正式关卡地图（网格节点 + 解锁态 + 星级）
   var map=document.createElement('div'); map.className='lvmap'; sc.appendChild(map);
   LEVELS.forEach(function(L,i){
@@ -2526,9 +2569,12 @@ function openSettings(){
     ['🔊 朗读发音', 'voiceOn', '关闭后只保留音效'],
     ['🎵 游戏音效', 'sfxOn', '吞噬声、奖励声'],
     ['🈶 星球上显示示例汉字', 'showZi', '如 b 显示“玻”，帮助理解发音'],
-    ['💡 高亮提示正确答案', 'hintOn', '关掉可提高难度']
+    ['💡 高亮提示正确答案', 'hintOn', '关掉可提高难度'],
+    ['✍ 吃掉汉字后自动看笔顺', 'autoWrite', '识字关每吃一个字播一次笔顺；关掉则不打断闯关']
   ];
   rows.forEach(function(r){
+    var def = (r[1]==='autoWrite');   // 笔顺自动演示默认开
+    if(S[r[1]]===undefined) S[r[1]]=def;
     var d=document.createElement('div'); d.className='sw';
     d.innerHTML='<div>'+r[0]+'<div style="font-size:12px;opacity:.55">'+r[2]+'</div></div>';
     var b=document.createElement('button'); b.className='btn'+(S[r[1]]?' on':'');
@@ -2544,7 +2590,11 @@ function openSettings(){
       :(Voice.zhState==='bad'?'本机浏览器语音不出声 —— 没关系，汉字与拼音都已改用本地发音包，不受影响'
       :'正在实测…（不影响出字，本地发音包已就绪）'))+'）'+
     '<br><b>教学建议：</b>1～9 关为自由认读，适合第一课时热身；10～12 关为拼读任务，建议老师在旁边带读“声母m—韵母a—一声—妈”。'+
-    '<br><b>操作：</b>点星球让黑洞飞过去，也可以直接按住黑洞拖动。';
+    '<br><b>操作：</b>点星球让黑洞飞过去，也可以直接按住黑洞拖动。'+
+    '<br><b>关于笔顺书写（v16）：</b>笔顺动画与描红由 <b>hanzi-writer</b>（MIT）驱动；'+
+    '汉字笔顺数据来自 <b>Make Me A Hanzi</b> 项目，其字形取自 Arphic Technology（华康科技）1999 年'+
+    '以宽松许可发布的字体，依 <b>Arphic Public License</b> 再发布（许可全文见随附 ARPHICPL.TXT）。'+
+    '数据随游戏打包、不联网请求，仅在首次进入书写时加载。';
   sc.appendChild(t);
   var test=document.createElement('button'); test.className='btn'; test.style.marginTop='10px';
   test.textContent='▶ 发音自检 · 拼音（a o e i u ü）';
@@ -3111,8 +3161,188 @@ function startReviewErr(){
     tip:'这些都是你以前点错的音，听清楚再喂黑洞 —— 慢一点也没关系！'});
 }
 
+/* ============================================================
+   书写练习：笔顺动画 + 描红跟着写（v16）
+   · 动画/判定用 hanzi-writer（MIT，见 vendor/hanzi-writer.min.js）
+   · 笔画数据来自 Make Me A Hanzi / Arphic 字体，Arphic Public License
+     —— 许可全文见 vendor/ARPHICPL.TXT，游戏内「关于」页亦有署名
+   · 懒加载：首次进书写才下载 JS(36KB) + strokes.json(gzip 288KB)，不影响首屏
+   ============================================================ */
+var HW_CHARS='毛布瓜禾前色后年正长平广方什怎么没兴公会回间问可今告升从众森明男呢吧吗林中啊啦米呀朋友船比日月水飞又火车山地云爸土弟奶天爷哥你妈我手石姐人他足口发耳目小上头鼻牙大下马虫牛羊右左鸟鸡猫猪鱼兔里狗猴象鹅虎鸭熊鹿叶竹苗草蛇蛙花树红木白蓝枝本黄黑绿橙饭菜青粉紫面肉盐饼糖梨蛋果汤蕉汁豆苹机葡路桃橘桥园停街椅屋房窗门灯床笔家纸桌画院字二七算写一百三四五尺六八学九十千只条张个周万把钟早晚双午时片昨跑跳吃说听笑起看喝坐睡醒去出来哭入西关南开高东矮北厚短好薄是有要在的袜鞋能裤不了衣领帽勺带包袖锅叉扣碗盘刀灶杯油瓶痛药医病疼助救保健护秋雨冬夏春雪电读风冰雷虾兵农工同贝察警鲸伴师沙洋海浪岛湖泳帆棒游输赢赛喜走网哀队球步怒怕乐静忙多急爱宽圆尖老女少弯给拿放欢抱书推答窄送鼓狐找';
+var HW=null, HW_DATA=null, HW_LOADING=false, HW_FAIL=0;
+function hwSupport(ch){ return HW_CHARS.indexOf(ch)>=0; }   // 不下载大文件就能判断这个字能否写
+function hwEnsure(cb){
+  if(HW && HW_DATA) return cb();
+  if(HW_FAIL){ return; }
+  if(HW_LOADING){ setTimeout(function(){ hwEnsure(cb); },150); return; }
+  HW_LOADING=true;
+  var maybe=function(){ if(HW && HW_DATA){ HW_LOADING=false; cb(); } };
+  if(!HW){
+    var s=document.createElement('script');
+    s.src='vendor/hanzi-writer.min.js';
+    s.onload=function(){ HW=window.HanziWriter||null; if(!HW){ HW_FAIL=1; HW_LOADING=false; toast('书写组件加载失败',2.4); } maybe(); };
+    s.onerror=function(){ HW_FAIL=1; HW_LOADING=false; toast('书写组件加载失败，请检查网络',2.8); };
+    document.head.appendChild(s);
+  }
+  if(!HW_DATA){
+    try{
+      fetch('strokes.json').then(function(r){ return r.json(); }).then(function(j){ HW_DATA=j; maybe(); })
+        ['catch'](function(){ HW_FAIL=1; HW_LOADING=false; toast('笔画数据加载失败',2.8); });
+    }catch(e){ HW_FAIL=1; HW_LOADING=false; }
+  }
+}
+function hwDataFor(ch){ var d=HW_DATA&&HW_DATA[ch]; return d? {strokes:d.s, medians:d.m} : null; }
+
+var WRI={char:'', py:'', writer:null, list:[], idx:0, timer:0, dismissed:false, onClose:null, autoShown:{}};
+function writeStatus(t,cls){
+  var e=document.getElementById('writeStatus');
+  e.textContent=t||''; e.className='wstatus'+(cls?' '+cls:'');
+}
+function openWrite(ch, opts){
+  opts=opts||{};
+  if(!hwSupport(ch)){ toast('这个字暂时没有笔画数据',2.2); return; }
+  hwEnsure(function(){
+    if(!HW || !HW_DATA) return;
+    WRI.char=ch; WRI.py=opts.py || ((PIN[ch]&&PIN[ch].py)||'');
+    WRI.list=(opts.list && opts.list.length)? opts.list : [ch];
+    WRI.idx=Math.max(0, WRI.list.indexOf(ch));
+    WRI.dismissed=false; WRI.onClose=opts.onClose||null;
+    document.getElementById('writeTitle').textContent=opts.title||'写一写';
+    document.getElementById('writeTip').style.display = opts.hideTip? 'none':'';
+    document.getElementById('writeMask').classList.remove('hide');
+    buildWrite();
+    if(opts.autoPlay) writeDemo(!!opts.autoClose);
+  });
+}
+function closeWrite(){
+  clearTimeout(WRI.timer);
+  if(WRI.writer){ try{ WRI.writer.cancelQuiz(); }catch(e){} WRI.writer=null; }
+  document.getElementById('writeMask').classList.add('hide');
+  if(WRI.onClose){ var f=WRI.onClose; WRI.onClose=null; f(); }
+}
+function buildWrite(){
+  var box=document.getElementById('writeBox');
+  box.innerHTML='';
+  if(WRI.writer){ try{ WRI.writer.cancelQuiz(); }catch(e){} WRI.writer=null; }
+  document.getElementById('writeZi').textContent=WRI.char;
+  document.getElementById('writePy').textContent=WRI.py||'';
+  var size=Math.max(170, Math.min(300, Math.floor(Math.min(window.innerWidth||400, window.innerHeight||700)*0.60)));
+  try{
+    WRI.writer=HW.create(box, WRI.char, {
+      width:size, height:size, padding:16,
+      showOutline:true, outlineColor:'rgba(160,190,255,.32)',
+      strokeColor:'#ffd166', radicalColor:'#ff8a3d',
+      strokeAnimationSpeed:1.0, delayBetweenStrokes:420,
+      charDataLoader:function(c,onComplete){ onComplete(hwDataFor(c)); }
+    });
+    WRI.writer.showCharacter();
+  }catch(e){ writeStatus('这个字渲染失败了，换一个试试','warn'); return; }
+  writeStatus('先看我写一遍，再自己描一描～');
+  buildWriteRow();
+}
+function buildWriteRow(){
+  var row=document.getElementById('writeRow'); row.innerHTML='';
+  function btn(txt,fn,primary){
+    var b=document.createElement('button');
+    b.className='btn'+(primary?' primary':''); b.textContent=txt;
+    b.onclick=function(){ Sfx.click(); WRI.dismissed=true; fn(); };
+    row.appendChild(b); return b;
+  }
+  btn('👀 看笔顺', function(){ writeDemo(false); });
+  btn('✍ 我来写', function(){ writeQuiz(); }, true);
+  btn('🔊 读一遍', function(){ Sound.say(WRI.char, WRI.char); });
+  if(WRI.list.length>1){
+    btn('← 上一个', function(){ writeGo(-1); });
+    btn('下一个 →', function(){ writeGo(1); });
+  }
+  btn('完成', function(){ closeWrite(); });
+}
+function writeGo(d){
+  WRI.idx=(WRI.idx+d+WRI.list.length)%WRI.list.length;
+  var ch=WRI.list[WRI.idx]; if(!hwSupport(ch)){ writeGo(d>0?1:-1); return; }
+  WRI.char=ch; WRI.py=(PIN[ch]&&PIN[ch].py)||'';
+  buildWrite();
+}
+function writeDemo(autoClose){
+  if(!WRI.writer) return;
+  try{ WRI.writer.cancelQuiz(); }catch(e){}
+  writeStatus('一笔一笔看清楚哦～');
+  Sound.say(WRI.char, WRI.char);
+  WRI.writer.animateCharacter({
+    onComplete:function(){
+      writeStatus('看完啦！点「我来写」试试～','ok');
+      // 关内自动播放场景：动画播完再停一会儿，期间没点任何按钮就自动收起，不打断闯关
+      if(autoClose){
+        WRI.dismissed=false;
+        WRI.timer=setTimeout(function(){ if(!WRI.dismissed) closeWrite(); }, 900);
+      }
+    }
+  });
+}
+function writeQuiz(){
+  if(!WRI.writer) return;
+  clearTimeout(WRI.timer);
+  var total=(HW_DATA[WRI.char]&&HW_DATA[WRI.char].s.length)||0, done=0;
+  writeStatus('用手指沿着线描，一笔写完再写下一笔（共 '+total+' 笔）');
+  try{
+    WRI.writer.quiz({
+      leniency:1.9,              // 放宽：幼儿手指粗，别一直判错
+      showHintAfterMisses:1,     // 错一次就给提示线
+      markStrokeCorrectAfterMisses:2,
+      onCorrectStroke:function(){
+        done++; Sfx.star();
+        writeStatus('第 '+done+' 笔 ✓  '+(total?('还剩 '+(total-done)+' 笔'):''),'ok');
+      },
+      onMistake:function(){
+        Sfx.nope();
+        writeStatus('这一笔再试一次，跟着提示线走～','warn');
+      },
+      onComplete:function(){
+        writeStatus('写对啦，真棒！🎉','ok');
+        Sfx.win(); Sound.say(WRI.char, WRI.char);
+        S.prog.written=(S.prog.written||0)+1; saveProg();
+      }
+    });
+  }catch(e){ writeStatus('书写模式启动失败','warn'); }
+}
+/* 书写练习页：列出「已认过且有笔画数据」的字 */
+function openWritePractice(){
+  // 按「关卡教学顺序」列出已认过的字（不是按 Unicode 乱排，孩子复习时跟上课顺序一致）
+  var known=[], seen={};
+  LEVELS.forEach(function(L){
+    if(L.type!=='zi' || !L.set) return;
+    L.set.forEach(function(ch){
+      if(seen[ch] || !(S.prog.known&&S.prog.known[ch])) return;
+      if(!hwSupport(ch)) return;
+      seen[ch]=1; known.push(ch);
+    });
+  });
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='✍ 书写练习';
+  sc.innerHTML='';
+  document.getElementById('panelExtra').innerHTML='';
+  if(!known.length){
+    var t=document.createElement('div'); t.className='tip';
+    t.innerHTML='还没有认识的字哦 —— 先去<b>识字关</b>吃掉一些汉字，再回来练习书写。';
+    sc.appendChild(t);
+  }else{
+    var h=document.createElement('div'); h.className='tip';
+    h.innerHTML='已认识 <b>'+known.length+'</b> 个字，点一个开始写。写完一个会自动跳到下一个字。';
+    sc.appendChild(h);
+    var g=document.createElement('div'); g.className='wgrid';
+    known.forEach(function(ch){
+      var c=document.createElement('div'); c.className='wcell'; c.textContent=ch;
+      c.onclick=function(){ Sfx.click(); openWrite(ch,{list:known, title:'写一写 · 已学字'}); };
+      g.appendChild(c);
+    });
+    sc.appendChild(g);
+  }
+  var bl=document.getElementById('btnBackLv'); if(bl) bl.style.display='none';
+  document.getElementById('panel').classList.remove('hide');
+}
 function closePanel(){ document.getElementById('panel').classList.add('hide'); }
 document.getElementById('panelClose').onclick=closePanel;
+document.getElementById('writeClose').onclick=function(){ Sfx.click(); closeWrite(); };
 
 document.getElementById('btnMenu').onclick=function(){ Sfx.click(); openLevels(); };
 document.getElementById('btnSet').onclick=function(){ Sfx.click(); openSettings(); };
