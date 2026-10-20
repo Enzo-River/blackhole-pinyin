@@ -33,6 +33,11 @@
     border-radius:12px;padding:8px 12px;font-size:15px;cursor:pointer;line-height:1}
   .btn:active{transform:scale(.96)}
   .btn.on{background:rgba(120,255,200,.2);border-color:rgba(120,255,200,.5)}
+  /* 有卡片飘出可视区时，召回按钮高亮提醒 */
+  .btn.warn{background:rgba(255,120,120,.28);border-color:#ff8a8a;color:#fff;
+    animation:recallPulse 1.1s ease-in-out infinite}
+  @keyframes recallPulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,120,120,.55)}
+    50%{transform:scale(1.09);box-shadow:0 0 0 6px rgba(255,120,120,0)}}
   #lvName{font-size:17px;font-weight:700;margin-left:2px;text-shadow:0 2px 8px #000;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #lvSub{font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -287,6 +292,7 @@
   <div id="stars">⭐ 0</div>
   <button class="btn on" id="btnVoice" title="朗读开关">🔊</button>
   <button class="btn" id="btnSet" title="老师设置">⚙</button>
+  <button class="btn" id="btnRecall" title="把跑出屏幕的字卡召回中间（卡片飘走时点它）" style="display:none">🎯</button>
   <button class="btn" id="btnRedo" title="重来本关" style="display:none">↻</button>
 </header>
 
@@ -551,7 +557,37 @@ var ZI = [
   ['雪','xuě','❄️'],['星','xīng','⭐'],['光','guāng','💡'],['电','diàn','⚡'],['灯','dēng','💡'],
   ['路','lù','🛣️'],['桥','qiáo','🌉'],['站','zhàn','🚉'],['立','lì','🧍'],['说','shuō','🗣️'],
   ['读','dú','📖'],['画','huà','🎨'],['唱','chàng','🎤'],['玩','wán','🎮'],['高','gāo','📏'],
-  ['低','dī','📉'],['冷','lěng','🥶'],['热','rè','🥵'],['香','xiāng','🌸'],['甜','tián','🍬']
+  ['低','dī','📉'],['冷','lěng','🥶'],['热','rè','🥵'],['香','xiāng','🌸'],['甜','tián','🍬'],
+  // 识字31 · 山川田野
+  ['川','chuān','🌊'],['河','hé','💧'],['江','jiāng','🌊'],['池','chí','🏊'],['泉','quán','⛲'],
+  ['田','tián','🌾'],['野','yě','🌿'],['坡','pō','⛰️'],['岸','àn','🏞️'],['谷','gǔ','🌄'],
+  // 识字32 · 白天和夜晚
+  ['光','guāng','💡'],['星','xīng','⭐'],['亮','liàng','🔆'],['暗','àn','🌑'],['晴','qíng','☀️'],
+  ['阴','yīn','☁️'],['冷','lěng','🥶'],['热','rè','🥵'],['暖','nuǎn','🔥'],['凉','liáng','🍃'],
+  // 识字33 · 酸甜苦辣
+  ['香','xiāng','🌸'],['甜','tián','🍬'],['酸','suān','🍋'],['辣','là','🌶️'],['咸','xián','🧂'],
+  ['苦','kǔ','😖'],['鲜','xiān','🐟'],['饱','bǎo','😋'],['饿','è','🥺'],['渴','kě','🥤'],
+  // 识字34 · 校园生活
+  ['校','xiào','🏫'],['班','bān','👥'],['课','kè','📚'],['生','shēng','🌱'],['楼','lóu','🏢'],
+  ['场','chǎng','🏟️'],['旗','qí','🚩'],['歌','gē','🎵'],['玩','wán','🎮'],['唱','chàng','🎤'],
+  // 识字35 · 反义词对对碰
+  ['低','dī','📉'],['深','shēn','🕳️'],['浅','qiǎn','🏊'],['远','yuǎn','🔭'],['近','jìn','📍'],
+  ['快','kuài','⚡'],['慢','màn','🐢'],['轻','qīng','🎈'],['重','zhòng','🪨'],['满','mǎn','🍚'],
+  // 识字36 · 我会做的事
+  ['立','lì','🧍'],['洗','xǐ','🧼'],['刷','shuā','🪥'],['穿','chuān','👕'],['讲','jiǎng','🗣️'],
+  ['叫','jiào','📣'],['吹','chuī','💨'],['打','dǎ','👊'],['拍','pāi','👏'],['骑','qí','🚲'],
+  // 识字37 · 小花园
+  ['松','sōng','🌲'],['柏','bǎi','🌳'],['柳','liǔ','🌾'],['荷','hé','🪷'],['莲','lián','🌸'],
+  ['菊','jú','🌼'],['梅','méi','🌺'],['芽','yá','☘️'],['根','gēn','🪵'],['茶','chá','🍵'],
+  // 识字38 · 小动物朋友
+  ['燕','yàn','🐦'],['蝶','dié','🦋'],['蜂','fēng','🐝'],['蚁','yǐ','🐜'],['龟','guī','🐢'],
+  ['龙','lóng','🐉'],['雀','què','🐤'],['鸦','yā','🪶'],['蚕','cán','🐛'],['蝉','chán','🪲'],
+  // 识字39 · 城市里走走
+  ['城','chéng','🏙️'],['市','shì','🏬'],['站','zhàn','🚉'],['店','diàn','🏪'],['票','piào','🎫'],
+  ['钱','qián','💰'],['伞','sǎn','☂️'],['箱','xiāng','🧳'],['镜','jìng','🪞'],['锁','suǒ','🔒'],
+  // 识字40 · 心里想的
+  ['心','xīn','❤️'],['想','xiǎng','💭'],['念','niàn','💌'],['记','jì','📝'],['认','rèn','✅'],
+  ['知','zhī','🧠'],['真','zhēn','⭐'],['名','míng','📛'],['话','huà','💬'],['数','shù','🔢'],
 ];
 /* 星球外形：圆 / 方 / 三角 / 星 / 六边 / 房子 / 汽车 / 树 / 云 / 心 / 菱 / 火箭 */
 var ZI_SHAPES = ['circle','square','tri','star','hex','house','car','tree','cloud','heart','diamond','rocket'];
@@ -590,7 +626,7 @@ var ZI_TS = {'发':'头发', '只':'一只', '乐':'快乐',/* 轻声字 / 多�
 /* 汉字本地音频包映射：汉字 -> audio/ 下的 ASCII 文件名（h + md5 前 8 位）。
    303 个汉字/词全部离线预生成为 mp3，运行时直接播本地文件，
    不再依赖浏览器 TTS，也不调用任何第三方在线合成接口——这是微信里也能出声的根本保证。 */
-var ZI_AUDIO = {'一':'h7941da94','七':'haad6914f','万':'h9d032066','三':'he662ff59','上':'haf767b7e','下':'h3850a186','不':'h9eba1ab6','东':'hd9ca5d6e','个':'h930882bb','中':'haed1dfbc','么':'hf20eff35','乐':'ha2705d7f','九':'h9b4851f8','书':'h2f3703e4','了':'h163773fb','二':'h2d8be272','云':'ha45fb6bb','五':'h1fcc29d0','人':'h465afe3c','什':'h3a7dc8e5','今':'hba4b5ed1','从':'h0cc05f42','他':'h5fe86c60','众':'hd877d132','会':'h647477bb','伴':'h33a9c0c0','你':'hdf1fd910','保':'hb553703b','停':'h87438613','健':'hb31314f9','兔':'hff5e0a15','入':'h4e6a4b28','八':'hedf1acd5','公':'h7d6c6b0e','六':'h61b45352','关':'hd58a55bc','兴':'h496c4a11','兵':'h31015c2f','写':'h4d7dc6c5','农':'h5ddab871','冬':'h5d6e3b1d','冰':'h15733c32','出':'h58f02106','刀':'h83f6c0da','前':'hd8cbd046','助':'hed7b6e1c','勺':'h9dd8b998','包':'h5442dfce','北':'h9e08f63a','医':'hc1fad4ce','十':'h18124572','千':'hc821e522','升':'h4caf8b40','午':'h1933b5e7','南':'h48029ea2','厚':'hba8c173b','去':'hdfb9366c','又':'h1689ddd7','叉':'ha50def5b','友':'hb75aa526','双':'hff8f4688','发':'h922e08ae','口':'hc9417574','只':'hf4a0476b','可':'h4aebcc5f','右':'h4d9c32c2','叶':'h066aab17','吃':'ha52b77df','同':'h49cd6e0a','后':'h2038d4ba','吗':'h2988084a','吧':'h9ff279f5','听':'h8cbe1c93','呀':'h4bdddbd2','告':'h11696f22','呢':'h65ac5a7b','周':'ha657f46f','哀':'h5fb44db5','哥':'hd8a297a6','哭':'h03464325','啊':'h04c16ff7','啦':'h19cfa682','喜':'h7adf3d7d','喝':'h57df2711','四':'h21716cf3','回':'he0a11316','园':'h097fcee0','圆':'hdfda0ded','土':'h06da773f','在':'h241d47a3','地':'h1ee506bf','坐':'h0169bebf','夏':'hd4b37c9f','多':'h7b1568e6','大':'hab18e30c','天':'h249aba76','头':'h4be2abbc','女':'h87c835a6','奶':'h0bf2ceb3','好':'hac2c8f13','妈':'h11148107','姐':'h05da6973','字':'ha95dbb0e','学':'h65f27a24','家':'ha6cdd2a0','宽':'hea5a1c75','察':'h3077abd6','小':'h391b8fa9','少':'hbd2282db','尖':'h91b9aafd','尺':'h977314f9','屋':'h9a117e2b','山':'h86fa9c82','岛':'h1ec268bb','工':'ha626497b','左':'hd2aff141','布':'hcfc2f013','帆':'h15f70b63','师':'h2928bba2','带':'h66e2b6ac','帽':'h8cac7515','平':'hf81ab586','年':'h465260fe','广':'h05483066','床':'h1696a596','开':'h84932056','弟':'h10b8e3ca','张':'h6499fc74','弯':'h568b73f4','忙':'h1c0a089e','怎':'h031534c3','怒':'h8a95a681','怕':'h93efc278','急':'h6da09b98','我':'h16815254','房':'h61c4260a','手':'h3c7d183f','扣':'haedc526b','找':'h0a4df2a5','把':'ha37a9be7','护':'h2a087a67','抱':'h1075ddb2','拿':'hc7f7acf5','推':'h615eb6d6','放':'hcedaabc9','救':'h4efd01ed','方':'hc26236c2','日':'h3edddd85','早':'hd6cb15b9','时':'h609b5f0a','明':'he647d10f','春':'hdd201928','昨':'hccbcdbcd','是':'h0a60ac8f','晚':'h9299aa7a','月':'he42b99d5','有':'hcc4ad2fd','朋':'h75767133','木':'he0a5e08a','本':'ha4fb8425','机':'h23a732e6','条':'hcc1bacb5','来':'hf7b0a3bd','杯':'h86296f5a','林':'h70c4b42a','果':'h2bbb3b39','枝':'hed2087f4','树':'h302f276a','桃':'h432c7765','桌':'h128b1e7c','桥':'h3e3c1513','梨':'h9213c6fc','棒':'hc71d2a67','森':'h0d9aeb6e','椅':'h73251581','橘':'hfaa5dda2','橙':'hb990b42b','欢':'h5654d79a','正':'h0f756c3f','步':'h4a0ff510','比':'hd6eea357','毛':'h6f74ec99','水':'heab619fb','汁':'hb38fd422','汤':'h9c6d2f2f','沙':'h08eec2c5','没':'h3672c6af','油':'hda82fdfc','泳':'h11f4f8dd','洋':'h962067f7','浪':'he15e41f2','海':'h9aa7f829','游':'he34cb018','湖':'h3849c239','火':'hdf3bbd52','灯':'h7ccb1378','灶':'h50e9ea40','熊':'h8df702f4','爱':'h8f743c2c','爷':'hcc607188','爸':'hab10119e','片':'hb26fc74c','牙':'hd582052b','牛':'ha933ef6a','狐':'hf8b9f2fa','狗':'h5090e44e','猪':'he4dc9ec1','猫':'hb655de68','猴':'h89510ab4','球':'h1b2527d8','瓜':'hcfec36ed','瓶':'h0c88bfc8','电':'h974899ef','男':'h36a4908a','画':'h2287851d','疼':'h47f18cd9','病':'he659182e','痛':'h1627e739','白':'h9b9a35c2','百':'h81ec89a2','的':'h01d7aa49','盐':'h983448e8','盘':'hff4efcaf','目':'h4064560f','看':'h9302446f','睡':'h0e7c928c','短':'hb58b94d8','矮':'h839cef97','石':'h87cc016a','碗':'he67f42e9','禾':'h86469aae','秋':'hfdf31ff3','窄':'h2c2d355b','窗':'h4bebe7c0','竹':'h50064b40','笑':'h1300f40c','笔':'h9fb4dafd','答':'h416f5354','算':'h0ffa26f7','米':'h8227e17a','粉':'h8bb6651f','糖':'ha0b763d8','紫':'h34e66c72','红':'hd088e652','纸':'hd17f4387','给':'h37186b95','绿':'h806c4388','网':'h6ebcee97','羊':'ha136f339','老':'h04837a0c','耳':'h78e4f46b','肉':'hf37896e6','能':'h9c047961','船':'h7def9ee0','色':'h9122c537','花':'h22dbba75','苗':'h61c08944','苹':'h7d7bc945','草':'h7d3cfe8c','药':'h60cb730b','菜':'h3ee77c8e','葡':'h6369a5de','蓝':'h2fc8da52','蕉':'h3779c485','薄':'hccfd0ae4','虎':'h5ccc31d2','虫':'haed37235','虾':'hf949b651','蛇':'h37e76c8a','蛋':'h96dabbb9','蛙':'h9ca5e313','街':'h39ca614f','衣':'h0cd16de4','袖':'hed6b0017','袜':'h7506c78e','裤':'h8a49f6c0','西':'hd62cb2a2','要':'h5438c873','警':'hd67835b0','说':'hddc9d3d1','读':'h75769d1a','豆':'h49823b10','象':'h175141b4','贝':'h26b41cbd','赛':'h35901227','赢':'hd5fad0d8','走':'h0154e79e','起':'h308fdfa0','足':'hfbb4674d','跑':'hc5032ff7','路':'hd047a27f','跳':'hf4965ce1','车':'h7fce1289','输':'h97acbb0c','送':'h040f3943','醒':'hbadaebd5','里':'hff875e90','钟':'h4d44cc97','锅':'hcd876ccb','长':'h092acb9c','门':'ha4960087','问':'h57fe12bf','间':'he04aa3f3','队':'h440c0841','院':'hbd3a0074','雨':'h95433763','雪':'hc4fccd8d','雷':'h65ad96da','青':'h1ca69c4b','静':'h861a7657','面':'hfd6a0e7d','鞋':'hdb695b39','领':'h987dc5d5','风':'hb2489198','飞':'ha8dd7133','饭':'h094f7310','饼':'hd2ed0a06','马':'h4e2572e0','高':'h4296d7d2','鱼':'h0857fa4e','鲸':'hfd7be996','鸟':'hcdd7ce48','鸡':'hef2712b1','鸭':'h3840579d','鹅':'hb301be8a','鹿':'hec485dc1','黄':'h12401e34','黑':'h9cba5857','鼓':'hc6a438ef','鼻':'habf53f44'};
+var ZI_AUDIO = {'一':'h7941da94','七':'haad6914f','万':'h9d032066','三':'he662ff59','上':'haf767b7e','下':'h3850a186','不':'h9eba1ab6','东':'hd9ca5d6e','个':'h930882bb','中':'haed1dfbc','么':'hf20eff35','乐':'ha2705d7f','九':'h9b4851f8','书':'h2f3703e4','了':'h163773fb','二':'h2d8be272','云':'ha45fb6bb','五':'h1fcc29d0','亮':'hf4b50e41','人':'h465afe3c','什':'h3a7dc8e5','今':'hba4b5ed1','从':'h0cc05f42','他':'h5fe86c60','众':'hd877d132','会':'h647477bb','伞':'he3c7a14b','伴':'h33a9c0c0','低':'h19ac677a','你':'hdf1fd910','保':'hb553703b','停':'h87438613','健':'hb31314f9','光':'h4af845a4','兔':'hff5e0a15','入':'h4e6a4b28','八':'hedf1acd5','公':'h7d6c6b0e','六':'h61b45352','关':'hd58a55bc','兴':'h496c4a11','兵':'h31015c2f','写':'h4d7dc6c5','农':'h5ddab871','冬':'h5d6e3b1d','冰':'h15733c32','冷':'h74eaee96','凉':'h6cc7c9e6','出':'h58f02106','刀':'h83f6c0da','刷':'h7d25c91c','前':'hd8cbd046','助':'hed7b6e1c','勺':'h9dd8b998','包':'h5442dfce','北':'h9e08f63a','医':'hc1fad4ce','十':'h18124572','千':'hc821e522','升':'h4caf8b40','午':'h1933b5e7','南':'h48029ea2','厚':'hba8c173b','去':'hdfb9366c','又':'h1689ddd7','叉':'ha50def5b','友':'hb75aa526','双':'hff8f4688','发':'h922e08ae','口':'hc9417574','只':'hf4a0476b','叫':'h27ead3ff','可':'h4aebcc5f','右':'h4d9c32c2','叶':'h066aab17','吃':'ha52b77df','同':'h49cd6e0a','名':'h4f8ca95e','后':'h2038d4ba','吗':'h2988084a','吧':'h9ff279f5','听':'h8cbe1c93','吹':'h5031712c','呀':'h4bdddbd2','告':'h11696f22','呢':'h65ac5a7b','周':'ha657f46f','咸':'h70457042','哀':'h5fb44db5','哥':'hd8a297a6','哭':'h03464325','唱':'hbf4e101d','啊':'h04c16ff7','啦':'h19cfa682','喜':'h7adf3d7d','喝':'h57df2711','四':'h21716cf3','回':'he0a11316','园':'h097fcee0','圆':'hdfda0ded','土':'h06da773f','在':'h241d47a3','地':'h1ee506bf','场':'ha02160f8','坐':'h0169bebf','坡':'h17f4f2d9','城':'h3e2b12c5','夏':'hd4b37c9f','多':'h7b1568e6','大':'hab18e30c','天':'h249aba76','头':'h4be2abbc','女':'h87c835a6','奶':'h0bf2ceb3','好':'hac2c8f13','妈':'h11148107','姐':'h05da6973','字':'ha95dbb0e','学':'h65f27a24','家':'ha6cdd2a0','宽':'hea5a1c75','察':'h3077abd6','小':'h391b8fa9','少':'hbd2282db','尖':'h91b9aafd','尺':'h977314f9','屋':'h9a117e2b','山':'h86fa9c82','岛':'h1ec268bb','岸':'h4d4f1e5c','川':'he130dbe0','工':'ha626497b','左':'hd2aff141','市':'h371528ff','布':'hcfc2f013','帆':'h15f70b63','师':'h2928bba2','带':'h66e2b6ac','帽':'h8cac7515','平':'hf81ab586','年':'h465260fe','广':'h05483066','床':'h1696a596','店':'he852c9a4','开':'h84932056','弟':'h10b8e3ca','张':'h6499fc74','弯':'h568b73f4','心':'hbf08c05e','忙':'h1c0a089e','快':'h8fcedbfd','念':'h8d32e5f5','怎':'h031534c3','怒':'h8a95a681','怕':'h93efc278','急':'h6da09b98','想':'h291837bd','慢':'he0b665f2','我':'h16815254','房':'h61c4260a','手':'h3c7d183f','打':'h0e1ceeea','扣':'haedc526b','找':'h0a4df2a5','把':'ha37a9be7','护':'h2a087a67','抱':'h1075ddb2','拍':'h18499ab9','拿':'hc7f7acf5','推':'h615eb6d6','放':'hcedaabc9','救':'h4efd01ed','数':'h54af0a5d','方':'hc26236c2','旗':'h331575be','日':'h3edddd85','早':'hd6cb15b9','时':'h609b5f0a','明':'he647d10f','星':'hd1cde6ad','春':'hdd201928','昨':'hccbcdbcd','是':'h0a60ac8f','晚':'h9299aa7a','晴':'heabe42f7','暖':'hc4aebf74','暗':'h428fe9a2','月':'he42b99d5','有':'hcc4ad2fd','朋':'h75767133','木':'he0a5e08a','本':'ha4fb8425','机':'h23a732e6','条':'hcc1bacb5','来':'hf7b0a3bd','杯':'h86296f5a','松':'h161e45f0','林':'h70c4b42a','果':'h2bbb3b39','枝':'hed2087f4','柏':'h8b7fec05','柳':'h224a09b8','树':'h302f276a','校':'h750800b7','根':'h99ef7b0d','桃':'h432c7765','桌':'h128b1e7c','桥':'h3e3c1513','梅':'h4edc8d49','梨':'h9213c6fc','棒':'hc71d2a67','森':'h0d9aeb6e','椅':'h73251581','楼':'h302a1f43','橘':'hfaa5dda2','橙':'hb990b42b','欢':'h5654d79a','歌':'hf4578269','正':'h0f756c3f','步':'h4a0ff510','比':'hd6eea357','毛':'h6f74ec99','水':'heab619fb','汁':'hb38fd422','江':'h4e285c9f','池':'hda6a42d2','汤':'h9c6d2f2f','沙':'h08eec2c5','没':'h3672c6af','河':'h5ea03ddf','油':'hda82fdfc','泉':'h5b87bd70','泳':'h11f4f8dd','洋':'h962067f7','洗':'hd9656107','浅':'hb37c14c4','浪':'he15e41f2','海':'h9aa7f829','深':'h21ac5a49','渴':'h922265b4','游':'he34cb018','湖':'h3849c239','满':'h73325cad','火':'hdf3bbd52','灯':'h7ccb1378','灶':'h50e9ea40','热':'h2044c273','熊':'h8df702f4','燕':'h2673734f','爱':'h8f743c2c','爷':'hcc607188','爸':'hab10119e','片':'hb26fc74c','牙':'hd582052b','牛':'ha933ef6a','狐':'hf8b9f2fa','狗':'h5090e44e','猪':'he4dc9ec1','猫':'hb655de68','猴':'h89510ab4','玩':'h53b1c12a','班':'h043aaa71','球':'h1b2527d8','瓜':'hcfec36ed','瓶':'h0c88bfc8','甜':'h6d81233f','生':'hb30c1a98','田':'h3db5087b','电':'h974899ef','男':'h36a4908a','画':'h2287851d','疼':'h47f18cd9','病':'he659182e','痛':'h1627e739','白':'h9b9a35c2','百':'h81ec89a2','的':'h01d7aa49','盐':'h983448e8','盘':'hff4efcaf','目':'h4064560f','看':'h9302446f','真':'h5a7958d8','睡':'h0e7c928c','知':'he46ce299','短':'hb58b94d8','矮':'h839cef97','石':'h87cc016a','碗':'he67f42e9','票':'he46f3b4f','禾':'h86469aae','秋':'hfdf31ff3','穿':'h355af532','窄':'h2c2d355b','窗':'h4bebe7c0','立':'hd3d2b63d','站':'h4b3774c6','竹':'h50064b40','笑':'h1300f40c','笔':'h9fb4dafd','答':'h416f5354','算':'h0ffa26f7','箱':'h231206dd','米':'h8227e17a','粉':'h8bb6651f','糖':'ha0b763d8','紫':'h34e66c72','红':'hd088e652','纸':'hd17f4387','给':'h37186b95','绿':'h806c4388','网':'h6ebcee97','羊':'ha136f339','老':'h04837a0c','耳':'h78e4f46b','肉':'hf37896e6','能':'h9c047961','船':'h7def9ee0','色':'h9122c537','花':'h22dbba75','芽':'h13026bc1','苗':'h61c08944','苦':'ha4f47bec','苹':'h7d7bc945','茶':'ha001ed1c','草':'h7d3cfe8c','药':'h60cb730b','荷':'hafef5c60','莲':'hbaf51961','菊':'h9bd5e3b5','菜':'h3ee77c8e','葡':'h6369a5de','蓝':'h2fc8da52','蕉':'h3779c485','薄':'hccfd0ae4','虎':'h5ccc31d2','虫':'haed37235','虾':'hf949b651','蚁':'h53b25382','蚕':'h32efb6bc','蛇':'h37e76c8a','蛋':'h96dabbb9','蛙':'h9ca5e313','蜂':'h6d42b626','蝉':'hb73b835d','蝶':'hbc55d7dc','街':'h39ca614f','衣':'h0cd16de4','袖':'hed6b0017','袜':'h7506c78e','裤':'h8a49f6c0','西':'hd62cb2a2','要':'h5438c873','警':'hd67835b0','认':'h33c2f137','记':'h348ada89','讲':'h9b0a03d1','话':'h65abb088','说':'hddc9d3d1','读':'h75769d1a','课':'hdbbd6d48','谷':'hee176efe','豆':'h49823b10','象':'h175141b4','贝':'h26b41cbd','赛':'h35901227','赢':'hd5fad0d8','走':'h0154e79e','起':'h308fdfa0','足':'hfbb4674d','跑':'hc5032ff7','路':'hd047a27f','跳':'hf4965ce1','车':'h7fce1289','轻':'h9b0f2ee6','输':'h97acbb0c','辣':'h2134a402','近':'hc68a31cb','远':'h6619176b','送':'h040f3943','酸':'h778b84eb','醒':'hbadaebd5','里':'hff875e90','重':'hfa713268','野':'h806b80f2','钟':'h4d44cc97','钱':'hd23513f0','锁':'h75580fe8','锅':'hcd876ccb','镜':'h2e256f10','长':'h092acb9c','门':'ha4960087','问':'h57fe12bf','间':'he04aa3f3','队':'h440c0841','阴':'hca4062ed','院':'hbd3a0074','雀':'h8c6ff93a','雨':'h95433763','雪':'hc4fccd8d','雷':'h65ad96da','青':'h1ca69c4b','静':'h861a7657','面':'hfd6a0e7d','鞋':'hdb695b39','领':'h987dc5d5','风':'hb2489198','飞':'ha8dd7133','饭':'h094f7310','饱':'hbc4abfbc','饼':'hd2ed0a06','饿':'h0e112cdd','香':'h431ffc5f','马':'h4e2572e0','骑':'h53f4a0ec','高':'h4296d7d2','鱼':'h0857fa4e','鲜':'hb3fcfc70','鲸':'hfd7be996','鸟':'hcdd7ce48','鸡':'hef2712b1','鸦':'h1258f3dc','鸭':'h3840579d','鹅':'hb301be8a','鹿':'hec485dc1','黄':'h12401e34','黑':'h9cba5857','鼓':'hc6a438ef','鼻':'habf53f44','龙':'h682570a2','龟':'ha28b35f6'};
 ZI.forEach(function(z){
   var h=hzHash(z[0]);
   PIN[z[0]] = {py:z[1], zi:z[0], say:z[0], em:z[2], kind:'zi',
@@ -673,6 +709,26 @@ var LEVELS = [
    tip:'多少、方圆 —— 生活中到处都是反义词。'},
   {name:'识字30 · 天天用的动词', type:'zi', set:['给','从','拿','放','找','问','答','送','抱','推'],
    tip:'会动的字：给、拿、放、找，做一个动作认一个字。'},
+  {name:'识字31 · 山川田野', type:'zi', set:['川','河','江','池','泉','田','野','坡','岸','谷'],
+   tip:'高山、大河、田野 —— 走出家门看见的世界。'},
+  {name:'识字32 · 白天和夜晚', type:'zi', set:['光','星','亮','暗','晴','阴','冷','热','暖','凉'],
+   tip:'白天有太阳和亮光，晚上有星星和阴凉 —— 一对一对地记。'},
+  {name:'识字33 · 酸甜苦辣', type:'zi', set:['香','甜','酸','辣','咸','苦','鲜','饱','饿','渴'],
+   tip:'舌头尝到的味道：甜甜的糖，酸酸的柠檬，咸咸的盐。'},
+  {name:'识字34 · 校园生活', type:'zi', set:['校','班','课','生','楼','场','旗','歌','玩','唱'],
+   tip:'上学啦：学校、班级、上课、升旗、唱歌、玩游戏。'},
+  {name:'识字35 · 反义词对对碰', type:'zi', set:['低','深','浅','远','近','快','慢','轻','重','满'],
+   tip:'深和浅、远和近、快和慢 —— 反过来念一遍更好记。'},
+  {name:'识字36 · 我会做的事', type:'zi', set:['立','洗','刷','穿','讲','叫','吹','打','拍','骑'],
+   tip:'站起来、洗手、刷牙、穿衣 —— 边做动作边认字。'},
+  {name:'识字37 · 小花园', type:'zi', set:['松','柏','柳','荷','莲','菊','梅','芽','根','茶'],
+   tip:'松树、柳树、荷花、菊花 —— 公园里的花花草草。'},
+  {name:'识字38 · 小动物朋友', type:'zi', set:['燕','蝶','蜂','蚁','龟','龙','雀','鸦','蚕','蝉'],
+   tip:'燕子、蝴蝶、蜜蜂、乌龟 —— 它们都是我们的好朋友。'},
+  {name:'识字39 · 城市里走走', type:'zi', set:['城','市','站','店','票','钱','伞','箱','镜','锁'],
+   tip:'城市、车站、商店 —— 和爸爸妈妈出门时会看到。'},
+  {name:'识字40 · 心里想的', type:'zi', set:['心','想','念','记','认','知','真','名','话','数'],
+   tip:'认一认、想一想、记一记 —— 说话写字都要用到。'},
   {name:'单韵母六兄弟', type:'free', set:['a','o','e','i','u','ü'],
    tip:'六个单韵母，挨个点一遍，听听它们都怎么读。'},
   {name:'声母小队 b p m f', type:'free', set:['b','p','m','f'],
@@ -724,8 +780,12 @@ var LEVELS = [
 ];
 /* 内容难度分层（必须写在数组“之后”：塞进字面量里会在构造过程中抛错，整段脚本都跑不起来）
    识字 01-10 启蒙 ★，11-20 巩固 ★★，21-30 提升 ★★★；拼音自由关中等，拼读关最高。 */
+var ziSeq=0;                                  // 只数正式「识字NN」关，假期作业不计入序号
 LEVELS.forEach(function(L,i){
-  if(L.type==='zi')         L.diff = (i<10?1 : i<20?2 : 3);
+  if(L.type==='zi'){
+    if(L.hw){ L.diff=1; }                       // 老师手写卡片恒为启蒙难度
+    else { ziSeq++; L.diff = (ziSeq<=10?1 : ziSeq<=20?2 : 3); }
+  }
   else if(L.type==='spell') L.diff = 3;
   else                      L.diff = 2;
 });
@@ -734,7 +794,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v16';
+var BUILD = 'v17';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1155,13 +1215,28 @@ var DIFF = {
 };
 function diffOn(){ return DIFF[S.prog.diff] || DIFF[2]; }
 function bumpErr(id){ if(!id) return; S.prog.err[id]=(S.prog.err[id]||0)+1; saveProg(); }
+/* 存档结构版本 + 关卡下标迁移
+   v1 -> v2：新增「识字31-40」共 10 关，插在下标 35（原「单韵母六兄弟」）之前。
+   通关记录 prog.passed 是按关卡下标存的，不迁移的话老玩家的「拼音/拼读已通关」
+   会被算到新的识字关上，解锁链也会错乱。 */
+var PROG_VER = 2, LV_SHIFT_AT = 35, LV_SHIFT_N = 10;
+function migrateProg(p){
+  if(!p) return p;
+  if(!p.v){                                   // 老存档没有版本号 → 按 v1 处理
+    var np={}, k;
+    for(k in p.passed){ if(p.passed[k]){ var i=+k; np[i>=LV_SHIFT_AT ? i+LV_SHIFT_N : i]=1; } }
+    p.passed=np;
+  }
+  p.v=PROG_VER;
+  return p;
+}
 function loadProg(){
   try{ var p=JSON.parse(localStorage.getItem('bhpy_prog')||'{}'); }catch(e){ var p={}; }
   p.passed = p.passed||{}; p.stars = p.stars||0; p.known = p.known||{};
   p.err = p.err||{};                 // 记录每个字/拼音被点错的次数，给家长端看薄弱环节
   p.seenTut = !!p.seenTut;           // 是否看过新手引导（清空记录后变 false → 可重看）
   if(!DIFF[p.diff]) p.diff = 2;
-  return p;
+  return migrateProg(p);
 }
 function saveProg(){ try{ localStorage.setItem('bhpy_prog', JSON.stringify(S.prog)); }catch(e){} }
 S.prog = loadProg();
@@ -1421,6 +1496,7 @@ function startLevel(i, forceLv){
   // 新手引导：第一次进入（或清空记录后）播放「点卡片→黑洞飞过去吃」的演示，点一下即学会并消失
   if(!S.prog.seenTut){ S.tut=1; S.tutT=0; }
   document.getElementById('btnRedo').style.display='';   // 关内随时可「重来本关」
+  document.getElementById('btnRecall').style.display='';  // 关内随时可「召回字卡」
   document.getElementById('startMask').classList.add('hide');
   document.getElementById('winMask').classList.add('hide');
   updateTop(); updateGoal();
@@ -1705,6 +1781,7 @@ function finish(){
   if(S.scene!=='play') return;
   S.scene='win';
   document.getElementById('btnRedo').style.display='none';
+  var rb=document.getElementById('btnRecall'); if(rb){ rb.style.display='none'; rb.classList.remove('warn'); }
   S.winT=3.6; S.combo=0; bigBurst();   // 弹窗背后持续放烟花
   if(!S.level.tmp) S.prog.passed[S.li]=1;   // 临时复习关不冒充正式关卡的通关记录
   if(!S.level.tmp && S.li+1<LEVELS.length && !S.prog.passed[S.li+1]) justUnlocked=S.li+1;   // 触发下一关解锁过场
@@ -1755,6 +1832,7 @@ function draw(dt){
   // 每帧安全网：任何「存活」卡片一旦跑到可视区外（旋转/地址栏伸缩导致 ARENA 滞后、
   // 或 drawPlanet 提前 return 漏夹），立刻快速飞回屏幕中部，杜绝「卡在屏外吃不到」。
   recoverStray();
+  updateRecallBtn();               // 有卡飘出可视区时，顶栏 🎯 按钮高亮提醒
   // 星球（存活）
   S.planets.forEach(function(p){ if(p.st==='alive') drawPlanet(g,p,dt); });
   // 黑洞
@@ -2009,16 +2087,65 @@ function drawShapeDeco(g, shape, r){
   }
 }
 
+/* 🎯 召回按钮状态：有卡片飘出可视区就高亮（每 ~10 帧刷一次，不每帧动 DOM） */
+var _recallTick=0, _recallWarn=false;
+function updateRecallBtn(){
+  if(++_recallTick < 10) return;
+  _recallTick=0;
+  var btn=document.getElementById('btnRecall');
+  if(!btn || btn.style.display==='none') return;
+  var warn = strayCount()>0;
+  if(warn!==_recallWarn){ _recallWarn=warn; btn.classList.toggle('warn', warn); }
+}
+function recallBtn(){ if(recallCards()) {} }
 function anyCapturing(){ // 同一时刻只允许吃一张卡：避免「移动黑洞顺手吞一串」与被动漂移误吞
   for(var i=0;i<S.planets.length;i++){ if(S.planets[i].st==='capturing') return true; }
   return false;
+}
+/* 出界判定：以「可视场地 ARENA」为准（顶栏/底栏/声调条背后都算看不见），
+   不再用整屏 W/H —— 否则卡片躲在顶栏或底栏后面时，虽然在屏内、玩家却根本找不到。 */
+function isStray(p){
+  if(!ARENA) return false;
+  if(p.kind==='tone') return false;    // 拼读关的声调球本来就画在「声调条」里，不算飘走
+  if(!isFinite(p.x) || !isFinite(p.y)) return true;
+  var pad=2;
+  return p.x < ARENA.x0-pad || p.x > ARENA.x1+pad || p.y < ARENA.y0-pad || p.y > ARENA.y1+pad;
+}
+function strayCount(){
+  var n=0;
+  for(var i=0;i<S.planets.length;i++){ if(S.planets[i].st==='alive' && isStray(S.planets[i])) n++; }
+  return n;
+}
+/* 手动召回：把全部存活卡片（不只是出界的）快速收回可视区中部。
+   用一屏内均匀散开的落点，避免多张卡叠在正中央互相盖住。 */
+function recallCards(quiet){
+  if(!ARENA) return 0;
+  var aw=ARENA.x1-ARENA.x0, ah=ARENA.y1-ARENA.y0;
+  var list=[];
+  for(var i=0;i<S.planets.length;i++){
+    var p=S.planets[i];
+    if(p.st==='alive' && p.kind!=='tone') list.push(p);   // 声调球固定在声调条，不参与召回
+  }
+  if(!list.length) return 0;
+  var n=list.length, cols=Math.min(3, Math.max(1, Math.ceil(Math.sqrt(n))));
+  var rows=Math.ceil(n/cols);
+  var cellW=aw*0.62/cols, cellH=ah*0.62/rows;
+  list.forEach(function(p,i){
+    var cx=ARENA.x0+aw*0.19+cellW*((i%cols)+0.5);
+    var cy=ARENA.y0+ah*0.19+cellH*(Math.floor(i/cols)+0.5);
+    if(!isFinite(p.x)||!isFinite(p.y)){ p.x=cx; p.y=cy; }
+    p.hx=cx; p.hy=cy;
+    p.tx=undefined; p.vx=0; p.vy=0;   // 取消平滑换位/漂移，交给回归插值，避免互相打架
+  });
+  if(!quiet){ try{ Sfx.click(); }catch(e){} toast('已把字卡召回屏幕中间 🎯', 1.6); }
+  return n;
 }
 /* 每帧安全网：把跑到可视区外的「存活」卡片快速拉回屏幕中部。
    覆盖 drawPlanet 提前 return（重生/入场）漏夹、以及旋转/浏览器地址栏伸缩导致 ARENA
    滞后等所有「卡在屏外吃不到」的情形。放在 draw() 里无条件每帧执行。*/
 function recoverStray(){
   if(!ARENA || !S.bh) return;
-  var m=4, aw=ARENA.x1-ARENA.x0, ah=ARENA.y1-ARENA.y0;
+  var aw=ARENA.x1-ARENA.x0, ah=ARENA.y1-ARENA.y0;
   for(var i=0;i<S.planets.length;i++){
     var p=S.planets[i];
     if(p.st!=='alive'){ continue; }
@@ -2027,9 +2154,8 @@ function recoverStray(){
       p.x=ARENA.x0+aw*0.5; p.y=ARENA.y0+ah*0.5; p.hx=undefined; p.hy=undefined; p.tx=undefined; p.vx=0; p.vy=0;
       continue;
     }
-    var off = p.x<m || p.x>W-m || p.y<m || p.y>H-m;
     // 越界中、或正在执行回归插值（hx 仍有效）→ 持续把卡拉回可视区中部
-    if(off || p.hx!==undefined){
+    if(isStray(p) || p.hx!==undefined){
       if(p.hx===undefined){               // 首次发现越界：目标定到可视区中部（带抖动，避免多卡叠在正中央）
         p.hx=ARENA.x0+aw*0.5 + (Math.random()-0.5)*aw*0.44;
         p.hy=ARENA.y0+ah*0.5 + (Math.random()-0.5)*ah*0.44;
@@ -2962,7 +3088,8 @@ function openRestore(){
 function bkApply(o){
   var p=o.prog||{};
   S.prog={passed:p.passed||{}, stars:p.stars||0, known:p.known||{}, err:p.err||{},
-          seenTut:!!p.seenTut, diff:(DIFF[p.diff]? p.diff : 2)};
+          seenTut:!!p.seenTut, diff:(DIFF[p.diff]? p.diff : 2), v:p.v||0};
+  migrateProg(S.prog);          // 旧备份（v1）导入时同样按新关卡表搬下标
   saveProg();
   try{
     var cu=Array.isArray(o.custom)? o.custom : [];
@@ -3168,7 +3295,7 @@ function startReviewErr(){
      —— 许可全文见 vendor/ARPHICPL.TXT，游戏内「关于」页亦有署名
    · 懒加载：首次进书写才下载 JS(36KB) + strokes.json(gzip 288KB)，不影响首屏
    ============================================================ */
-var HW_CHARS='毛布瓜禾前色后年正长平广方什怎么没兴公会回间问可今告升从众森明男呢吧吗林中啊啦米呀朋友船比日月水飞又火车山地云爸土弟奶天爷哥你妈我手石姐人他足口发耳目小上头鼻牙大下马虫牛羊右左鸟鸡猫猪鱼兔里狗猴象鹅虎鸭熊鹿叶竹苗草蛇蛙花树红木白蓝枝本黄黑绿橙饭菜青粉紫面肉盐饼糖梨蛋果汤蕉汁豆苹机葡路桃橘桥园停街椅屋房窗门灯床笔家纸桌画院字二七算写一百三四五尺六八学九十千只条张个周万把钟早晚双午时片昨跑跳吃说听笑起看喝坐睡醒去出来哭入西关南开高东矮北厚短好薄是有要在的袜鞋能裤不了衣领帽勺带包袖锅叉扣碗盘刀灶杯油瓶痛药医病疼助救保健护秋雨冬夏春雪电读风冰雷虾兵农工同贝察警鲸伴师沙洋海浪岛湖泳帆棒游输赢赛喜走网哀队球步怒怕乐静忙多急爱宽圆尖老女少弯给拿放欢抱书推答窄送鼓狐找';
+var HW_CHARS='毛布瓜禾前色后年正长平广方什怎么没兴公会回间问可今告升从众森明男呢吧吗林中啊啦米呀朋友船比日月水飞又火车山地云爸土弟奶天爷哥你妈我手石姐人他足口发耳目小上头鼻牙大下马虫牛羊右左鸟鸡猫猪鱼兔里狗猴象鹅虎鸭熊鹿叶竹苗草蛇蛙花树红木白蓝枝本黄黑绿橙饭菜青粉紫面肉盐饼糖梨蛋果汤蕉汁豆苹机葡路桃橘桥园停街椅屋房窗门灯床笔家纸桌画院字二七算写一百三四五尺六八学九十千只条张个周万把钟早晚双午时片昨跑跳吃说听笑起看喝坐睡醒去出来哭入西关南开高东矮北厚短好薄是有要在的袜鞋能裤不了衣领帽勺带包袖锅叉扣碗盘刀灶杯油瓶痛药医病疼助救保健护秋雨冬夏春雪电读风冰雷虾兵农工同贝察警鲸伴师沙洋海浪岛湖泳帆棒游输赢赛喜走网哀队球步怒怕乐静忙多急爱宽圆尖老女少弯给拿放欢抱书推答窄送鼓狐找田江池泉野坡谷光星暗晴川阴热岸凉香亮甜酸辣河咸冷苦饱鲜渴班校课生饿楼旗暖歌唱低浅远近快场轻重玩深洗刷穿立慢满讲叫骑吹拍松柳菊柏打芽根茶蝶荷蜂莲燕蚁龙梅龟雀鸦市城店站蚕票伞箱镜锁想念钱记蝉知认真名数心话';
 var HW=null, HW_DATA=null, HW_LOADING=false, HW_FAIL=0;
 function hwSupport(ch){ return HW_CHARS.indexOf(ch)>=0; }   // 不下载大文件就能判断这个字能否写
 function hwEnsure(cb){
@@ -3370,6 +3497,7 @@ document.getElementById('btnNext').onclick=function(){
 };
 document.getElementById('btnRetry').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };
 document.getElementById('btnRedo').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };  // 关内随时重来本关
+document.getElementById('btnRecall').onclick=function(){ recallCards(); };   // 字卡飘出可视区时一键召回屏幕中间
 document.getElementById('btnBack2').onclick=function(){ Sfx.click(); document.getElementById('winMask').classList.add('hide'); openLevels(); };
 
 /* ---------- 13. 启动 ---------- */
