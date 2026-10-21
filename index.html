@@ -33,7 +33,14 @@
     border-radius:12px;padding:8px 12px;font-size:15px;cursor:pointer;line-height:1}
   .btn:active{transform:scale(.96)}
   .btn.on{background:rgba(120,255,200,.2);border-color:rgba(120,255,200,.5)}
-  /* 有卡片飘出可视区时，召回按钮高亮提醒 */
+  /* 赛车模式左右方向键 */
+  #steerPad{position:fixed;left:0;right:0;bottom:0;height:0;z-index:6;pointer-events:none}
+  .steerBtn{position:absolute;width:66px;height:66px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:30px;line-height:1;
+    background:rgba(120,150,255,.24);border:2px solid rgba(165,195,255,.5);color:#eaf0ff;
+    pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer}
+  .steerBtn.on{background:rgba(120,255,200,.32);border-color:#7cffc8;transform:scale(.94)}
+  #btnSteerL{left:14px} #btnSteerR{right:14px}
   .btn.warn{background:rgba(255,120,120,.28);border-color:#ff8a8a;color:#fff;
     animation:recallPulse 1.1s ease-in-out infinite}
   @keyframes recallPulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,120,120,.55)}
@@ -299,6 +306,13 @@
 <div id="goal" class="ui">
   <div id="goalLeft"></div>
   <div id="goalText">准备好了吗？出发！</div>
+</div>
+
+<!-- 赛车模式：左右方向键（按住转向，松开滑行停下）。默认仍是「点字卡自动开过去」，
+     想自己开的时候用这两个键——两种操作随时可以混着用。 -->
+<div id="steerPad" style="display:none">
+  <div class="steerBtn" id="btnSteerL">◀</div>
+  <div class="steerBtn" id="btnSteerR">▶</div>
 </div>
 
 <!-- 开始页 -->
@@ -797,7 +811,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v18';
+var BUILD = 'v19';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1195,6 +1209,7 @@ var S = {
   scene:'start',
   mode:'bh',                  // 'bh' 黑洞（原版） / 'race' 赛车（新增分支入口）
   car:'sedan',                // 赛车模式当前车型
+  steer:0,                    // 赛车模式手动方向：-1 左 / 0 松开 / 1 右
   li:0, level:null,
   planets:[], bh:null, bgStars:[], parts:[], rings:[],
   ti:0, step:0,            // spell 关：任务序号 / 0声母 1韵母 2声调
@@ -1267,7 +1282,9 @@ function loadMode(){
 function saveMode(m){ try{ localStorage.setItem('bhpy_mode', m); }catch(e){} }
 function setMode(m){
   m = (m==='race') ? 'race' : 'bh';
-  S.mode=m; S.prog=S.progAll[m]; saveMode(m); saveProg();
+  S.mode=m; S.prog=S.progAll[m]; S.steer=0; saveMode(m); saveProg();
+  var spad=document.getElementById('steerPad');           // 方向键只属于赛车模式
+  if(spad) spad.style.display='none';
 }
 function saveProg(){ try{ localStorage.setItem('bhpy_prog', JSON.stringify(S.progAll)); }catch(e){} }
 S.progAll = loadProg();
@@ -1384,6 +1401,13 @@ function layout(){
   }
   ARENA={x0:side,y0:top+28,x1:W-side,y1:H-bottom};
   GOAL_TOP=H-gh;   // 底栏顶部 y：声调关黑洞需进入「声调条」（ARENA.y1 与底栏之间）才够得到声调球
+  // 赛车方向键：贴在底栏上方，随底栏实际高度走（横竖屏/不同机型底栏高度不一样）
+  var sp=document.getElementById('steerPad');
+  if(sp){
+    var sbs=document.querySelectorAll?document.querySelectorAll('.steerBtn'):[];
+    var by=Math.max(10, (H-GOAL_TOP)+12);
+    for(var si=0;si<sbs.length;si++){ sbs[si].style.bottom=by+'px'; }
+  }
   S.planets.forEach(function(p){
     p.x=Math.max(ARENA.x0+p.r, Math.min(ARENA.x1-p.r, p.x));
     p.y=Math.max(ARENA.y0+p.r, Math.min(ARENA.y1-p.r, p.y));
@@ -1532,6 +1556,9 @@ function startLevel(i, forceLv){
   if(!S.prog.seenTut){ S.tut=1; S.tutT=0; }
   document.getElementById('btnRedo').style.display='';   // 关内随时可「重来本关」
   document.getElementById('btnRecall').style.display='';  // 关内随时可「召回字卡」
+  S.steer=0;                                             // 进关先松开方向键
+  var spad=document.getElementById('steerPad');
+  if(spad) spad.style.display = (S.mode==='race')?'':'none';   // 只有赛车模式显示左右方向键
   document.getElementById('startMask').classList.add('hide');
   document.getElementById('winMask').classList.add('hide');
   updateTop(); updateGoal();
@@ -1817,6 +1844,8 @@ function finish(){
   S.scene='win';
   document.getElementById('btnRedo').style.display='none';
   var rb=document.getElementById('btnRecall'); if(rb){ rb.style.display='none'; rb.classList.remove('warn'); }
+  S.steer=0;
+  var spad2=document.getElementById('steerPad'); if(spad2) spad2.style.display='none';
   S.winT=3.6; S.combo=0; bigBurst();   // 弹窗背后持续放烟花
   if(!S.level.tmp) S.prog.passed[S.li]=1;   // 临时复习关不冒充正式关卡的通关记录
   var nx=nextLevelIdx(S.li);
@@ -2552,10 +2581,11 @@ function openGarage(){
    纯 Path / 矩形绘制，不依赖任何图片资源，因此不增加首屏体积。 */
 function drawCar(g,b,dt,id){
   var c=carOf(id||S.car);
-  var L=b.r*2.35, Hh=b.r*1.18;
+  var L=b.r*2.60, Hh=b.r*1.28;   // 俯视视角的车身：长 ≈ 2.6r、宽 ≈ 1.28r（手机上约 100×50px，够看清）
   var ang=(b.ang===undefined)?0:b.ang;
   var kind=c.kind;
   g.save();
+  g.translate(b.x,b.y);          // 关键：drawBH 里赛车分支是在黑洞的 translate 之前调用的，这里必须自己平移到车的位置
   // 地面投影（不跟着车转，看起来更稳）
   g.fillStyle='rgba(0,0,0,.34)';
   g.beginPath(); g.ellipse(0, Hh*0.52, L*0.40, Hh*0.24, 0, 0, 6.283); g.fill();
@@ -2657,8 +2687,18 @@ function drawCar(g,b,dt,id){
 /* 赛车行驶：先转向、再前进（不像黑洞那样直接插值过去），保留 tx/ty 目标机制，
    所以「点卡片 → 车自己开过去」和「拖着车跑」两种操作都能用。 */
 function driveCar(b,dt){
+  if(b.ang===undefined) b.ang=0;
+  if(S.steer){                                   // 手动：按住左右方向键转向（与「点字卡自动开」并存）
+    b.ang += S.steer*2.4*dt;
+    var spdK2=diffOn().spd;
+    var cruise=300*(spdK2<0.01?1.30:(spdK2<0.1?1.0:0.80));
+    b.spd=(b.spd||0)+(cruise-(b.spd||0))*Math.min(1,dt*2.6);
+    b.x += Math.cos(b.ang)*b.spd*dt;
+    b.y += Math.sin(b.ang)*b.spd*dt;
+    b.tx=b.x; b.ty=b.y;                          // 松开后从当前位置继续，不会突然弹回上一个目标
+    return;
+  }
   var dx=b.tx-b.x, dy=b.ty-b.y, dist=Math.hypot(dx,dy);
-  if(b.ang===undefined) b.ang=Math.atan2(dy,dx)||0;
   if(dist<3){ b.spd=(b.spd||0)*(1-Math.min(1,dt*8)); return; }
   var want=Math.atan2(dy,dx), da=want-b.ang;
   while(da>Math.PI) da-=6.283185307;
@@ -3802,6 +3842,32 @@ document.getElementById('btnNext').onclick=function(){
 document.getElementById('btnRetry').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };
 document.getElementById('btnRedo').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };  // 关内随时重来本关
 document.getElementById('btnRecall').onclick=function(){ recallCards(); };   // 字卡飘出可视区时一键召回屏幕中间
+/* 赛车模式左右方向键：按住持续转向，松开滑行停下（默认仍是点字卡自动开过去） */
+(function(){
+  function bindSteer(el, dir){
+    if(!el) return;
+    function down(e){
+      if(e && e.preventDefault) e.preventDefault();
+      if(S.mode!=='race' || !S.bh || S.scene!=='play') return;
+      S.steer=dir; S.bh.tgt=null; S.bh.drag=false;        // 手动接管：取消自动寻路
+      el.classList.add('on');
+      try{ Sfx.click(); }catch(err){}
+    }
+    function up(e){
+      if(e && e.preventDefault) e.preventDefault();
+      S.steer=0; el.classList.remove('on');
+    }
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('pointerleave', up);
+    el.addEventListener('touchstart', down, {passive:false});
+    el.addEventListener('touchend', up, {passive:false});
+    el.addEventListener('touchcancel', up, {passive:false});
+  }
+  bindSteer(document.getElementById('btnSteerL'), -1);
+  bindSteer(document.getElementById('btnSteerR'), 1);
+})();
 document.getElementById('btnBack2').onclick=function(){ Sfx.click(); document.getElementById('winMask').classList.add('hide'); openLevels(); };
 
 /* ---------- 13. 启动 ---------- */
