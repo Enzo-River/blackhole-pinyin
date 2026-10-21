@@ -313,6 +313,9 @@
       <button class="btn" id="btnStart" style="font-size:19px;padding:14px 30px;background:linear-gradient(135deg,#6ea8ff,#8f6eff);border:none;font-weight:700">▶ 开始游戏</button>
       <button class="btn" id="btnTeacher">👩‍🏫 老师须知</button>
     </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="btnRaceStart" style="font-size:17px;padding:12px 24px;background:linear-gradient(135deg,#ff9f43,#ff6b3d);border:none;font-weight:700">🏎 赛车闯关（认汉字）</button>
+    </div>
     <div class="row" style="margin-top:10px">
       <button class="btn" id="btnProgStart">📊 家长看进度</button>
       <button class="btn" id="btnDiffStart">🎚 难度分层</button>
@@ -794,7 +797,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v17';
+var BUILD = 'v18';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1190,6 +1193,8 @@ var Sfx = {
 /* ---------- 5. 全局状态 ---------- */
 var S = {
   scene:'start',
+  mode:'bh',                  // 'bh' 黑洞（原版） / 'race' 赛车（新增分支入口）
+  car:'sedan',                // 赛车模式当前车型
   li:0, level:null,
   planets:[], bh:null, bgStars:[], parts:[], rings:[],
   ti:0, step:0,            // spell 关：任务序号 / 0声母 1韵母 2声调
@@ -1215,31 +1220,60 @@ var DIFF = {
 };
 function diffOn(){ return DIFF[S.prog.diff] || DIFF[2]; }
 function bumpErr(id){ if(!id) return; S.prog.err[id]=(S.prog.err[id]||0)+1; saveProg(); }
-/* 存档结构版本 + 关卡下标迁移
+/* 存档结构版本 + 关卡下标迁移 + 模式分账
    v1 -> v2：新增「识字31-40」共 10 关，插在下标 35（原「单韵母六兄弟」）之前。
    通关记录 prog.passed 是按关卡下标存的，不迁移的话老玩家的「拼音/拼读已通关」
-   会被算到新的识字关上，解锁链也会错乱。 */
-var PROG_VER = 2, LV_SHIFT_AT = 35, LV_SHIFT_N = 10;
-function migrateProg(p){
-  if(!p) return p;
-  if(!p.v){                                   // 老存档没有版本号 → 按 v1 处理
+   会被算到新的识字关上，解锁链也会错乱。
+   v2 -> v3：赛车模式独立进度 —— 存档拆成 {bh:…, race:…} 两份，
+   S.prog 始终指向「当前模式」那一份，于是所有既有 S.prog.xxx 代码一行都不用改。 */
+var PROG_VER = 3, LV_SHIFT_AT = 35, LV_SHIFT_N = 10;
+function blankProg(diff){
+  return {passed:{}, stars:0, known:{}, err:{}, seenTut:false, diff:(DIFF[diff]?diff:2), v:PROG_VER};
+}
+function migrateProg(raw){
+  if(!raw || typeof raw!=='object') raw={};
+  if(!raw.v){                                   // 老存档没有版本号 → 按 v1 处理
     var np={}, k;
-    for(k in p.passed){ if(p.passed[k]){ var i=+k; np[i>=LV_SHIFT_AT ? i+LV_SHIFT_N : i]=1; } }
-    p.passed=np;
+    for(k in (raw.passed||{})){ if(raw.passed[k]){ var i=+k; np[i>=LV_SHIFT_AT ? i+LV_SHIFT_N : i]=1; } }
+    raw.passed=np; raw.v=2;
   }
-  p.v=PROG_VER;
-  return p;
+  if(raw.v<3){                                  // v2 -> v3：拆成黑洞 / 赛车两份独立进度
+    var bh={passed:raw.passed||{}, stars:raw.stars||0, known:raw.known||{}, err:raw.err||{},
+            seenTut:!!raw.seenTut, diff:(DIFF[raw.diff]?raw.diff:2), v:PROG_VER};
+    raw={v:PROG_VER, bh:bh, race:blankProg(bh.diff)};
+  }
+  if(!raw.bh)   raw.bh   = blankProg(2);
+  if(!raw.race) raw.race = blankProg((raw.bh && raw.bh.diff) || 2);
+  raw.v=PROG_VER;
+  ['bh','race'].forEach(function(k){
+    var p=raw[k];
+    p.passed=p.passed||{}; p.stars=p.stars||0; p.known=p.known||{};
+    p.err=p.err||{};                 // 记录每个字/拼音被点错的次数，给家长端看薄弱环节
+    p.seenTut=!!p.seenTut;           // 是否看过新手引导（清空记录后变 false → 可重看）
+    if(!DIFF[p.diff]) p.diff=2;
+    p.v=PROG_VER;
+  });
+  return raw;
 }
 function loadProg(){
-  try{ var p=JSON.parse(localStorage.getItem('bhpy_prog')||'{}'); }catch(e){ var p={}; }
-  p.passed = p.passed||{}; p.stars = p.stars||0; p.known = p.known||{};
-  p.err = p.err||{};                 // 记录每个字/拼音被点错的次数，给家长端看薄弱环节
-  p.seenTut = !!p.seenTut;           // 是否看过新手引导（清空记录后变 false → 可重看）
-  if(!DIFF[p.diff]) p.diff = 2;
-  return migrateProg(p);
+  try{ var raw=JSON.parse(localStorage.getItem('bhpy_prog')||'{}'); }catch(e){ var raw={}; }
+  return migrateProg(raw);
 }
-function saveProg(){ try{ localStorage.setItem('bhpy_prog', JSON.stringify(S.prog)); }catch(e){} }
-S.prog = loadProg();
+/* 两种模式共用关卡表与字库，各记一份进度（星星 / 通关 / 认字 / 错题互不干扰）。 */
+function loadMode(){
+  try{ var m=localStorage.getItem('bhpy_mode'); }catch(e){ var m=''; }
+  return (m==='race') ? 'race' : 'bh';
+}
+function saveMode(m){ try{ localStorage.setItem('bhpy_mode', m); }catch(e){} }
+function setMode(m){
+  m = (m==='race') ? 'race' : 'bh';
+  S.mode=m; S.prog=S.progAll[m]; saveMode(m); saveProg();
+}
+function saveProg(){ try{ localStorage.setItem('bhpy_prog', JSON.stringify(S.progAll)); }catch(e){} }
+S.progAll = loadProg();
+S.mode = loadMode();
+S.prog = S.progAll[S.mode];
+S.car = loadCar();
 loadCustom();   // 读取家长导入的「我的字表」并注入 PIN（自定义字才能正常渲染成星球）
 
 /* ---------- 6. 画布 ---------- */
@@ -1468,6 +1502,7 @@ function startLevel(i, forceLv){
   var by0=Math.min(by+46, Math.max(by, H-br-8));
   S.bh={x:bx, y:by0, r:br, rBase:br, growT:0, flash:0,
         tx:bx, ty:by, disk:0, tgt:null, drag:false,
+        ang:-Math.PI/2, spd:0,        // 赛车模式：车头朝向 + 当前车速（黑洞模式不用）
         label:'', labelT:0, burst:0, hold:null};
   if(!S.bgStars.length){
     S.bgStars=[]; for(var k=0;k<170;k++) S.bgStars.push({
@@ -1784,14 +1819,15 @@ function finish(){
   var rb=document.getElementById('btnRecall'); if(rb){ rb.style.display='none'; rb.classList.remove('warn'); }
   S.winT=3.6; S.combo=0; bigBurst();   // 弹窗背后持续放烟花
   if(!S.level.tmp) S.prog.passed[S.li]=1;   // 临时复习关不冒充正式关卡的通关记录
-  if(!S.level.tmp && S.li+1<LEVELS.length && !S.prog.passed[S.li+1]) justUnlocked=S.li+1;   // 触发下一关解锁过场
+  var nx=nextLevelIdx(S.li);
+  if(!S.level.tmp && nx>=0 && !S.prog.passed[nx]) justUnlocked=nx;   // 触发下一关解锁过场
   saveProg();
   var em = S.level.type==='zi' ? '📖' : (S.level.type==='free'?'🌟':'🏆');
   document.getElementById('winEmoji').textContent=em;
   document.getElementById('winTitle').textContent = '第'+(S.li+1)+'关 通关！';
   document.getElementById('winDesc').innerHTML =
     S.level.name+' —— 太厉害了！<br>累计 ⭐ '+S.prog.stars+' 颗星星';
-  document.getElementById('btnNext').style.display = (!S.level.tmp && S.li<LEVELS.length-1)?'':'none';
+  document.getElementById('btnNext').style.display = (!S.level.tmp && nx>=0)?'':'none';
   document.getElementById('winMask').classList.remove('hide');
   Sfx.win();
 }
@@ -1806,10 +1842,13 @@ function loop(ts){
 function draw(dt){
   var g=ctx;
   g.clearRect(0,0,W,H);
-  // 背景
-  var bg=g.createLinearGradient(0,0,W,H);
-  bg.addColorStop(0,'#070a1c'); bg.addColorStop(0.5,'#0a0d24'); bg.addColorStop(1,'#05060f');
-  g.fillStyle=bg; g.fillRect(0,0,W,H);
+  // 背景：黑洞模式是深空渐变，赛车模式换成滚动赛道
+  if(S.mode==='race'){ drawTrack(g,dt); }
+  else{
+    var bg=g.createLinearGradient(0,0,W,H);
+    bg.addColorStop(0,'#070a1c'); bg.addColorStop(0.5,'#0a0d24'); bg.addColorStop(1,'#05060f');
+    g.fillStyle=bg; g.fillRect(0,0,W,H);
+  }
 
   if(S.scene==='start'){ drawStartBg(dt); return; }
 
@@ -1817,8 +1856,8 @@ function draw(dt){
   if(S.shakeT>0){ S.shakeT-=dt; g.save(); g.translate((Math.random()-0.5)*6,(Math.random()-0.5)*6); }
   else g.save();
 
-  // 星空（受黑洞引力）
-  S.bgStars.forEach(function(s){
+  // 星空（受黑洞引力）—— 赛车模式是地面，不画星星
+  if(S.mode!=='race') S.bgStars.forEach(function(s){
     var dx=b.x-s.x, dy=b.y-s.y, d=Math.hypot(dx,dy)||1;
     if(d<260){ var f=(1-d/260)*110*dt; s.x+=dx/d*f*s.z; s.y+=dy/d*f*s.z; }
     s.x += (0.6+s.z*0.6)*dt*6;
@@ -1956,7 +1995,9 @@ function drawTutorial(g){
   g.fillStyle='rgba(255,221,102,.9)';
   g.beginPath(); g.moveTo(fx-7, fy+34); g.lineTo(fx+7, fy+34); g.lineTo(fx, fy+46); g.closePath(); g.fill();
   // 顶部说明条（窄屏自动换行，最多两行）
-  var msg='点一下卡片，黑洞就会飞过去把它吃掉！';
+  var msg = (S.mode==='race')
+    ? '点一下字卡，赛车就会开过去把它吃掉！'
+    : '点一下卡片，黑洞就会飞过去把它吃掉！';
   g.font='700 '+Math.max(13,Math.min(20,W*0.034))+'px "PingFang SC","Microsoft YaHei",sans-serif';
   var lines=wrapText(g,msg,W-48), lh=Math.max(18,Math.min(24,W*0.026));
   var bw=Math.max.apply(null,lines.map(function(s){return g.measureText(s).width;}))+36;
@@ -2417,17 +2458,258 @@ function drawCapture(g,p,dt,b){
   }
 }
 
+/* ---------- 9b. 赛车模式（v18 新增分支入口）----------
+   设计：两种模式共用同一套关卡表、字库、发音、笔顺与结算逻辑；差别只在
+   ① 玩家载具的样子（黑洞 ↔ 赛车）② 移动方式（瞬移追踪 ↔ 转向行驶）③ 背景（星空 ↔ 赛道）。
+   进度按模式分开记（S.progAll.bh / S.progAll.race），黑洞版完全不受影响。
+
+   ⚠ 合规说明：这里只画「车型类别」（轿车 / 越野 / 赛车 / 巴士 / 卡车 / 消防车 / 救护车 /
+   警车 / 工程车 / 出租车），全部为 Canvas 矢量自绘，**不使用任何真实汽车品牌的商标、
+   Logo 或名称**。原因：游戏/虚拟场景里使用他人知名汽车品牌标识，已有司法判例认定构成
+   商标侵权（杭州中院二审浙江首例虚拟商品商标侵权案，判赔 100 万元）。换成车型类别后
+   零商标风险，而且对幼儿来说「消防车 / 救护车」本就比车标更熟悉、更值得认。 */
+var CARS = [
+  {id:'sedan',  name:'小轿车', em:'🚗', kind:'sedan',  body:'#4aa3ff', dark:'#2b6ec2', glass:'#bfe4ff'},
+  {id:'suv',    name:'越野车', em:'🚙', kind:'suv',    body:'#5ac26a', dark:'#2f7a3d', glass:'#cdeecf'},
+  {id:'racer',  name:'赛车',   em:'🏎', kind:'racer',  body:'#ff5a5a', dark:'#b52d2d', glass:'#ffd3d3'},
+  {id:'bus',    name:'巴士',   em:'🚌', kind:'bus',    body:'#ffc94a', dark:'#c78f16', glass:'#fff0c2'},
+  {id:'truck',  name:'卡车',   em:'🚚', kind:'truck',  body:'#9b8bff', dark:'#5b4bc7', glass:'#ded8ff'},
+  {id:'fire',   name:'消防车', em:'🚒', kind:'fire',   body:'#ff6b3d', dark:'#b83a17', glass:'#ffd9c9'},
+  {id:'ambul',  name:'救护车', em:'🚑', kind:'ambul',  body:'#eef2f8', dark:'#b9c3d2', glass:'#cfe4ff'},
+  {id:'police', name:'警车',   em:'🚓', kind:'police', body:'#3f6fd8', dark:'#25437f', glass:'#cfe0ff'},
+  {id:'works',  name:'工程车', em:'🚜', kind:'works',  body:'#e0a02a', dark:'#8a5f10', glass:'#ffe6b0'},
+  {id:'taxi',   name:'出租车', em:'🚕', kind:'taxi',   body:'#ffd83d', dark:'#c9a300', glass:'#fff3c4'}
+];
+function carOf(id){
+  for(var i=0;i<CARS.length;i++){ if(CARS[i].id===id) return CARS[i]; }
+  return CARS[0];
+}
+function loadCar(){ try{ return carOf(localStorage.getItem('bhpy_car')).id; }catch(e){ return 'sedan'; } }
+function saveCar(id){ try{ localStorage.setItem('bhpy_car', id); }catch(e){} }
+
+/* 当前模式能玩的关卡下标（赛车模式先只做识字关），以及「下一关」怎么走 */
+function levelIdxList(){
+  if(S.mode!=='race') return LEVELS.map(function(L,i){ return i; });
+  var a=[]; LEVELS.forEach(function(L,i){ if(L.type==='zi') a.push(i); });
+  return a;
+}
+function nextLevelIdx(i){
+  var list=levelIdxList();
+  for(var k=0;k<list.length;k++){ if(list[k]>i) return list[k]; }
+  return -1;                       // 当前模式已经没有下一关了
+}
+/* 车库：选一辆车（纯车型分类，不含任何品牌标识） */
+function openGarage(){
+  var sc=document.getElementById('panelScroll');
+  document.getElementById('panelTitle').textContent='🚗 选一辆车';
+  sc.innerHTML='';
+  var tip=document.createElement('div'); tip.className='tip';
+  tip.innerHTML='赛车模式用的是<b>车型</b>，不是汽车品牌 —— 认车型（消防车、救护车…）才是对孩子有用的，'+
+    '用真车标反而有商标风险。<br>点一辆车就能换，之后在关卡地图里随时可以再换。';
+  sc.appendChild(tip);
+  var pv=document.createElement('canvas'); pv.id='garagePreview';
+  pv.width=300; pv.height=130; pv.style.cssText='display:block;margin:10px auto 4px;width:100%;max-width:300px;height:130px';
+  sc.appendChild(pv);
+  var pvName=document.createElement('div'); pvName.id='garageName';
+  pvName.style.cssText='text-align:center;font-size:15px;font-weight:700;margin-bottom:10px';
+  sc.appendChild(pvName);
+  var grid=document.createElement('div'); grid.className='lvmap'; sc.appendChild(grid);
+  function paint(){
+    var c=carOf(S.car);
+    var g=pv.getContext('2d');
+    try{
+      g.clearRect(0,0,pv.width,pv.height);
+      g.fillStyle='rgba(255,255,255,.05)'; g.fillRect(0,0,pv.width,pv.height);
+      g.save(); g.translate(pv.width/2, pv.height/2);
+      drawCar(g, {x:0,y:0,r:26,ang:0,spd:0}, 0, S.car);
+      g.restore();
+    }catch(e){}
+    pvName.textContent=c.em+' '+c.name;
+  }
+  CARS.forEach(function(c){
+    var b=document.createElement('div'); b.className='lvnode';
+    b.innerHTML='<span class="lvno" style="font-size:22px">'+c.em+'</span>'+
+      '<span class="lvname">'+c.name+'</span>';
+    b.onclick=function(){
+      Sfx.click(); S.car=c.id; saveCar(c.id); paint();
+      if(S.bh){ /* 换车后立刻生效 */ }
+      toast('换成了 '+c.name+' '+c.em, 1.6);
+    };
+    grid.appendChild(b);
+  });
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;gap:8px;margin-top:12px';
+  var bGo=document.createElement('button'); bGo.className='btn on'; bGo.textContent='▶ 开始赛车闯关'; bGo.style.flex='1';
+  bGo.onclick=function(){ Sfx.click(); closePanel(); resize(); startLevel(levelIdxList()[0]); };
+  var bBack=document.createElement('button'); bBack.className='btn'; bBack.textContent='← 关卡地图'; bBack.style.flex='1';
+  bBack.onclick=function(){ Sfx.click(); openLevels(); };
+  row.appendChild(bGo); row.appendChild(bBack); sc.appendChild(row);
+  paint();
+  document.getElementById('panel').classList.remove('hide');
+}
+
+/* 赛车矢量绘制：车头朝 +X，实际朝向由 b.ang 决定（drawCar 内部旋转）。
+   纯 Path / 矩形绘制，不依赖任何图片资源，因此不增加首屏体积。 */
+function drawCar(g,b,dt,id){
+  var c=carOf(id||S.car);
+  var L=b.r*2.35, Hh=b.r*1.18;
+  var ang=(b.ang===undefined)?0:b.ang;
+  var kind=c.kind;
+  g.save();
+  // 地面投影（不跟着车转，看起来更稳）
+  g.fillStyle='rgba(0,0,0,.34)';
+  g.beginPath(); g.ellipse(0, Hh*0.52, L*0.40, Hh*0.24, 0, 0, 6.283); g.fill();
+  g.rotate(ang);
+
+  var tyre='#14161f';
+  function wheel(x,y,rw,rh){
+    g.fillStyle=tyre;
+    roundRect(g, x-rw, y-rh, rw*2, rh*2, Math.min(rw,rh)*0.55); g.fill();
+    g.fillStyle='rgba(255,255,255,.18)';
+    g.beginPath(); g.ellipse(x,y,rw*0.40,rh*0.40,0,0,6.283); g.fill();
+  }
+  var rw=Hh*0.30, rh=Hh*0.26, ax=L*0.27, ay=Hh*0.42;
+
+  if(kind==='bus'){
+    wheel(-ax,-ay,rw*0.95,rh); wheel(ax*0.75,-ay,rw*0.95,rh);
+    wheel(-ax, ay,rw*0.95,rh); wheel(ax*0.75, ay,rw*0.95,rh);
+    g.fillStyle=c.body; roundRect(g,-L*0.5,-Hh*0.52,L,Hh*1.04,Hh*0.22); g.fill();
+    g.fillStyle=c.dark; roundRect(g,-L*0.5,Hh*0.24,L,Hh*0.28,Hh*0.10); g.fill();
+    g.fillStyle=c.glass;
+    for(var i=0;i<4;i++){ roundRect(g,-L*0.42+i*L*0.22,-Hh*0.36,L*0.15,Hh*0.34,3); g.fill(); }
+    g.fillStyle='rgba(255,255,255,.85)'; roundRect(g,L*0.40,-Hh*0.10,L*0.07,Hh*0.20,2); g.fill();
+  }else if(kind==='truck' || kind==='fire'){
+    wheel(-ax*1.15,-ay,rw,rh); wheel(-ax*0.35,-ay,rw,rh); wheel(ax*0.92,-ay,rw*1.05,rh);
+    wheel(-ax*1.15, ay,rw,rh); wheel(-ax*0.35, ay,rw,rh); wheel(ax*0.92, ay,rw*1.05,rh);
+    // 货厢
+    g.fillStyle=c.dark; roundRect(g,-L*0.5,-Hh*0.50,L*0.58,Hh*1.00,Hh*0.12); g.fill();
+    // 驾驶室
+    g.fillStyle=c.body; roundRect(g,L*0.05,-Hh*0.46,L*0.45,Hh*0.92,Hh*0.16); g.fill();
+    g.fillStyle=c.glass; roundRect(g,L*0.16,-Hh*0.34,L*0.22,Hh*0.44,4); g.fill();
+    if(kind==='fire'){
+      g.strokeStyle='#d8dde6'; g.lineWidth=Math.max(2,Hh*0.10);
+      g.beginPath(); g.moveTo(-L*0.42,-Hh*0.30); g.lineTo(L*0.06,-Hh*0.52); g.stroke();
+      g.fillStyle='#ff3b30'; g.beginPath(); g.arc(L*0.20,-Hh*0.52,Hh*0.13,0,6.283); g.fill();
+    }
+  }else if(kind==='ambul'){
+    wheel(-ax,-ay,rw,rh); wheel(ax,-ay,rw,rh); wheel(-ax,ay,rw,rh); wheel(ax,ay,rw,rh);
+    g.fillStyle=c.body; roundRect(g,-L*0.5,-Hh*0.50,L,Hh*1.00,Hh*0.18); g.fill();
+    g.fillStyle=c.glass; roundRect(g,L*0.12,-Hh*0.32,L*0.24,Hh*0.40,4); g.fill();
+    g.fillStyle='#e03131';                       // 红十字（救护车的通用标识，非品牌）
+    g.fillRect(-L*0.10,-Hh*0.09,Hh*0.52,Hh*0.18); g.fillRect(-L*0.04,-Hh*0.20,Hh*0.18,Hh*0.44);
+    g.fillStyle='#3b8cff'; g.beginPath(); g.arc(-L*0.20,-Hh*0.52,Hh*0.12,0,6.283); g.fill();
+  }else if(kind==='works'){
+    wheel(-ax*0.75,-ay,rw*0.90,rh); wheel(-ax*0.75,ay,rw*0.90,rh);
+    wheel(ax*0.98,-ay,rw*1.35,rh*1.35); wheel(ax*0.98,ay,rw*1.35,rh*1.35);
+    g.fillStyle=c.body; roundRect(g,-L*0.5,-Hh*0.44,L*0.86,Hh*0.88,Hh*0.16); g.fill();
+    g.fillStyle=c.glass; roundRect(g,-L*0.14,-Hh*0.30,L*0.30,Hh*0.40,4); g.fill();
+    g.fillStyle=c.dark;                          // 前铲斗
+    roundRect(g,L*0.34,-Hh*0.36,L*0.18,Hh*0.72,4); g.fill();
+  }else{
+    // 轿车 / 越野 / 赛车 / 警车 / 出租车：共用轿车底型，再按车型加特征
+    var bh2 = (kind==='racer')? Hh*0.72 : ((kind==='suv')? Hh*1.05 : Hh*0.92);
+    wheel(-ax,-ay,rw,rh); wheel(ax,-ay,rw,rh); wheel(-ax,ay,rw,rh); wheel(ax,ay,rw,rh);
+    g.fillStyle=c.body; roundRect(g,-L*0.5,-bh2*0.5,L,bh2,Hh*0.26); g.fill();
+    // 车顶 + 风挡
+    g.fillStyle=c.dark; roundRect(g,-L*0.16,-bh2*0.52,L*0.46,bh2*0.42,Hh*0.16); g.fill();
+    g.fillStyle=c.glass; roundRect(g,-L*0.12,-bh2*0.46,L*0.38,bh2*0.34,4); g.fill();
+    if(kind==='suv'){                            // 行李架
+      g.strokeStyle=c.dark; g.lineWidth=Math.max(2,Hh*0.08);
+      g.beginPath(); g.moveTo(-L*0.10,-bh2*0.54); g.lineTo(L*0.22,-bh2*0.54); g.stroke();
+    }
+    if(kind==='racer'){                          // 尾翼 + 前 splitter
+      g.fillStyle=c.dark;
+      roundRect(g,-L*0.52,-bh2*0.62,L*0.10,bh2*0.30,2); g.fill();
+      roundRect(g,L*0.40,bh2*0.30,L*0.12,bh2*0.16,2); g.fill();
+    }
+    if(kind==='police'){                         // 顶灯（红蓝交替闪烁）
+      var ph=(S.ti*0 + (Date.now()%700<350))?0:1;
+      g.fillStyle=ph?'#3b8cff':'#ff3b30';
+      roundRect(g,-L*0.06,-bh2*0.66,L*0.20,bh2*0.16,3); g.fill();
+    }
+    if(kind==='taxi'){                           // 顶灯箱
+      g.fillStyle='#ffb703';
+      roundRect(g,-L*0.05,-bh2*0.64,L*0.17,bh2*0.16,3); g.fill();
+    }
+  }
+  // 前后灯
+  g.fillStyle='rgba(255,240,180,.95)';
+  g.beginPath(); g.ellipse(L*0.46,-Hh*0.22,Hh*0.09,Hh*0.07,0,0,6.283); g.fill();
+  g.beginPath(); g.ellipse(L*0.46, Hh*0.22,Hh*0.09,Hh*0.07,0,0,6.283); g.fill();
+  g.fillStyle='rgba(255,90,80,.9)';
+  g.beginPath(); g.ellipse(-L*0.46,-Hh*0.22,Hh*0.07,Hh*0.06,0,0,6.283); g.fill();
+  g.beginPath(); g.ellipse(-L*0.46, Hh*0.22,Hh*0.07,Hh*0.06,0,0,6.283); g.fill();
+  g.restore();
+
+  // 速度线：开得快时车尾拉出气流
+  var sp=b.spd||0;
+  if(sp>140){
+    g.save(); g.translate(b.x,b.y); g.rotate(ang);
+    g.strokeStyle='rgba(255,255,255,'+Math.min(0.35,(sp-140)/900)+')'; g.lineWidth=2;
+    for(var k=0;k<3;k++){
+      var ly=(-Hh*0.28)+k*Hh*0.28, ln=L*(0.30+Math.random()*0.30);
+      g.beginPath(); g.moveTo(-L*0.55,ly); g.lineTo(-L*0.55-ln,ly); g.stroke();
+    }
+    g.restore();
+  }
+}
+
+/* 赛车行驶：先转向、再前进（不像黑洞那样直接插值过去），保留 tx/ty 目标机制，
+   所以「点卡片 → 车自己开过去」和「拖着车跑」两种操作都能用。 */
+function driveCar(b,dt){
+  var dx=b.tx-b.x, dy=b.ty-b.y, dist=Math.hypot(dx,dy);
+  if(b.ang===undefined) b.ang=Math.atan2(dy,dx)||0;
+  if(dist<3){ b.spd=(b.spd||0)*(1-Math.min(1,dt*8)); return; }
+  var want=Math.atan2(dy,dx), da=want-b.ang;
+  while(da>Math.PI) da-=6.283185307;
+  while(da<-Math.PI) da+=6.283185307;
+  b.ang += da*Math.min(1, dt*7.5);                     // 转向速度
+  var spdK=diffOn().spd;                               // 难度档：越小越快
+  var maxS=560*(spdK<0.01?1.35:(spdK<0.1?1.0:0.72));
+  var align=Math.max(0,Math.cos(da));                  // 方向没对准时减速（像真车转弯）
+  var wantS=Math.min(maxS, Math.max(110, dist*3.4))*(0.32+0.68*align);
+  b.spd=(b.spd||0)+(wantS-(b.spd||0))*Math.min(1,dt*3.0);
+  b.x += Math.cos(b.ang)*b.spd*dt;
+  b.y += Math.sin(b.ang)*b.spd*dt;
+}
+
+/* 赛道背景：竖向滚动的路面 + 车道虚线 + 两侧护栏（替代星空，同样是每帧自绘） */
+var TRACK_T=0;
+function drawTrack(g,dt){
+  TRACK_T += dt;
+  var lg=g.createLinearGradient(0,0,0,H);
+  lg.addColorStop(0,'#14303c'); lg.addColorStop(0.5,'#1c4250'); lg.addColorStop(1,'#102832');
+  g.fillStyle=lg; g.fillRect(0,0,W,H);
+  var m=Math.max(26, Math.min(74, W*0.075));           // 两侧路肩宽度
+  g.fillStyle='#1b4332'; g.fillRect(0,0,m,H); g.fillRect(W-m,0,m,H);
+  g.fillStyle='rgba(255,255,255,.55)';
+  g.fillRect(m-3,0,3,H); g.fillRect(W-m,0,3,H);
+  // 中央黄色虚线（向下滚动 = 车在往前开）
+  var dash=36, gap=28, off=(TRACK_T*210)%(dash+gap);
+  g.fillStyle='rgba(255,236,150,.72)';
+  for(var y=-dash; y<H+dash; y+=dash+gap){ g.fillRect(W/2-3, y+off, 6, dash); }
+  // 护栏立柱
+  g.fillStyle='rgba(220,235,255,.28)';
+  for(var y2=-(off%58); y2<H; y2+=58){
+    g.fillRect(m*0.30, y2, 5, 22); g.fillRect(W-m*0.30-5, y2, 5, 22);
+  }
+}
+
 function drawBH(g,b,dt,demo){
   b.disk += dt*1.5;
   // 目标靠近
   if(!demo){
     if(b.tgt && b.tgt.st==='alive'){ b.tx=b.tgt.x; b.ty=b.tgt.y; }
-    var k=1-Math.pow(diffOn().spd,dt);   // 难度档决定黑洞追星的-speed
-    b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
+    if(S.mode==='race'){ driveCar(b,dt); }             // 赛车：先转向再前进
+    else{
+      var k=1-Math.pow(diffOn().spd,dt);   // 难度档决定黑洞追星的-speed
+      b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
+    }
   }
-  // 黑洞必须留在可视场地内：否则拖到顶栏/底部卡后面就「找不到了」，
+  // 必须留在可视场地内：否则拖到顶栏/底部卡后面就「找不到了」，
   // 横竖屏切换后旧坐标也会跑到屏外，导致卡死（修复旋转后吃不到）。
-  var br2=b.r*0.2;
+  // 赛车车身比碰撞半径长，留出更大的边界余量，避免车头车尾被顶栏/底栏挡住。
+  var br2=(S.mode==='race')? b.r*0.55 : b.r*0.2;
   b.x=Math.max(ARENA.x0+br2, Math.min(ARENA.x1-br2, b.x));
   // 普通关卡：黑洞夹到 ARENA 内；拼读·声调关：允许进入「声调条」（ARENA.y1 与底栏之间），
   // 否则黑洞被夹在 ARENA 内、声调球在该条带里，永远够不到 → 声调选不上。
@@ -2438,12 +2720,14 @@ function drawBH(g,b,dt,demo){
   if(b.growT===undefined) b.growT=0;
   if(b.flash===undefined) b.flash=0;
   if(b.punch===undefined) b.punch=0;
-  var wantR = b.rBase*(1+Math.min(0.92, b.growT));
+  var wantR = b.rBase*(1+Math.min((S.mode==='race')?0.34:0.92, b.growT));
   b.r += (wantR-b.r)*Math.min(1, dt*3.2);
   if(b.flash>0) b.flash=Math.max(0, b.flash-dt*2.4);
   if(b.punch>0) b.punch=Math.max(0, b.punch-dt*3.0);   // 「一口闷」冲击约 0.33s 回落
   var R=b.r*(1+ (b.burst>0? b.burst*0.5:0) + b.punch*0.40);
   if(b.burst>0) b.burst=Math.max(0,b.burst-dt*1.2);
+  // 赛车模式：到这里为止的运动/成长逻辑与黑洞完全一致，后面只换成赛车的外观
+  if(S.mode==='race'){ drawCar(g,b,dt,S.car); return; }
   // 长大越多内核越「沉」（由纯黑渐变到深紫黑），被吃的一瞬间闪一下
   var gv=Math.min(1, b.growT/0.62);
   var fl=b.flash;
@@ -2623,28 +2907,37 @@ function clearCustom(){
 
 function openLevels(){
   var sc=document.getElementById('panelScroll');
-  document.getElementById('panelTitle').textContent='关卡地图';
+  var isRace=(S.mode==='race');
+  document.getElementById('panelTitle').textContent = isRace? '🏎 赛车闯关 · 关卡地图' : '关卡地图';
   sc.innerHTML='';
   var dk=diffOn();
   var zTotal=new Set(ZI.map(function(z){ return z[0]; })).size;
   var zDone=ZI.filter(function(z){ return S.prog.known[z[0]]; }).length;
-  var passedC=LEVELS.filter(function(L,i){ return S.prog.passed[i]; }).length;
+  // 赛车模式只跑识字关（拼音/拼读仍是黑洞模式的内容），进度也是独立的一份
+  var idxs=levelIdxList();
+  var passedC=idxs.filter(function(i){ return S.prog.passed[i]; }).length;
   // 顶部：总进度 + 薄弱复习快捷入口
   var top=document.createElement('div'); top.className='lvtop';
-  top.innerHTML='<div class="lvtop-stats">累计 ⭐ <b>'+S.prog.stars+'</b>　通关 <b>'+passedC+'/'+LEVELS.length+'</b>　认字 <b>'+zDone+'/'+zTotal+'</b>　难度 <b>'+dk.emo+' '+dk.name+'</b></div>'+
+  top.innerHTML='<div class="lvtop-stats">累计 ⭐ <b>'+S.prog.stars+'</b>　通关 <b>'+passedC+'/'+idxs.length+'</b>　认字 <b>'+zDone+'/'+zTotal+'</b>　难度 <b>'+dk.emo+' '+dk.name+'</b></div>'+
+    '<button class="btn" id="btnSwitchMode">'+(isRace? '🕳 换回黑洞模式' : '🏎 换成赛车模式')+'</button>'+
+    (isRace? '<button class="btn" id="btnGarage">🚗 换我的车（'+carOf(S.car).name+'）</button>' : '')+
     '<button class="btn" id="btnWeakMiss">🔁 没认会的字</button>'+
     '<button class="btn" id="btnWeakErr">🔥 点错过的音</button>'+
     '<button class="btn" id="btnMistake">📕 错题本</button>'+
     '<button class="btn" id="btnWritePrac">✍ 书写练习</button>';
   sc.appendChild(top);
+  var bsw=document.getElementById('btnSwitchMode');
+  if(bsw) bsw.onclick=function(){ Sfx.click(); setMode(isRace?'bh':'race'); openLevels(); };
+  var bg2=document.getElementById('btnGarage'); if(bg2) bg2.onclick=function(){ Sfx.click(); openGarage(); };
   var bw1=document.getElementById('btnWeakMiss'); if(bw1) bw1.onclick=function(){ Sfx.click(); closePanel(); startReview(); };
   var bw2=document.getElementById('btnWeakErr'); if(bw2) bw2.onclick=function(){ Sfx.click(); closePanel(); startReviewErr(); };
   var bw3=document.getElementById('btnMistake'); if(bw3) bw3.onclick=function(){ Sfx.click(); openMistakeBook(); };
   var bw4=document.getElementById('btnWritePrac'); if(bw4) bw4.onclick=function(){ Sfx.click(); openWritePractice(); };
   // 正式关卡地图（网格节点 + 解锁态 + 星级）
   var map=document.createElement('div'); map.className='lvmap'; sc.appendChild(map);
-  LEVELS.forEach(function(L,i){
-    var unlocked = i===0 || S.prog.passed[i-1];
+  idxs.forEach(function(i,k){
+    var L=LEVELS[i];
+    var unlocked = (k===0) || !!S.prog.passed[idxs[k-1]];
     var node=document.createElement('div');
     var cls='lvnode'+(unlocked?'':' locked')+(S.prog.passed[i]?' done':'');
     if(i===justUnlocked && unlocked && !S.prog.passed[i]) cls+=' justunlocked';
@@ -2717,6 +3010,8 @@ function openSettings(){
       :'正在实测…（不影响出字，本地发音包已就绪）'))+'）'+
     '<br><b>教学建议：</b>1～9 关为自由认读，适合第一课时热身；10～12 关为拼读任务，建议老师在旁边带读“声母m—韵母a—一声—妈”。'+
     '<br><b>操作：</b>点星球让黑洞飞过去，也可以直接按住黑洞拖动。'+
+    '<br><b>赛车模式（v18）：</b>开始页点「🏎 赛车闯关」即可切换。赛车模式只跑识字关，进度与黑洞模式<b>分开记录</b>，'+
+    '字库、发音、笔顺书写全部共用 —— 换种玩法，学的东西一样。车型为类别（消防车 / 救护车等），不使用任何汽车品牌商标。'+
     '<br><b>关于笔顺书写（v16）：</b>笔顺动画与描红由 <b>hanzi-writer</b>（MIT）驱动；'+
     '汉字笔顺数据来自 <b>Make Me A Hanzi</b> 项目，其字形取自 Arphic Technology（华康科技）1999 年'+
     '以宽松许可发布的字体，依 <b>Arphic Public License</b> 再发布（许可全文见随附 ARPHICPL.TXT）。'+
@@ -2970,7 +3265,7 @@ function dlProgress(){
 var BK_VER = 1;
 function bkSig(o){ return hzHash(JSON.stringify(o)); }   // 校验位：防粘贴截断 / 手改
 function bkBuild(){
-  return {app:'bhpy', v:BK_VER, ts:Date.now(), prog:S.prog, custom:(CUSTOM||[])};
+  return {app:'bhpy', v:BK_VER, ts:Date.now(), mode:S.mode, prog:S.prog, custom:(CUSTOM||[])};
 }
 function bkText(){
   var o=bkBuild();
@@ -3087,9 +3382,10 @@ function openRestore(){
 /* 真正回填（覆盖当前进度） */
 function bkApply(o){
   var p=o.prog||{};
-  S.prog={passed:p.passed||{}, stars:p.stars||0, known:p.known||{}, err:p.err||{},
-          seenTut:!!p.seenTut, diff:(DIFF[p.diff]? p.diff : 2), v:p.v||0};
-  migrateProg(S.prog);          // 旧备份（v1）导入时同样按新关卡表搬下标
+  var md=(o.mode==='race')?'race':'bh';          // 旧备份没有 mode → 归到黑洞模式
+  S.progAll[md]={passed:p.passed||{}, stars:p.stars||0, known:p.known||{}, err:p.err||{},
+                 seenTut:!!p.seenTut, diff:(DIFF[p.diff]? p.diff : 2), v:PROG_VER};
+  if(md===S.mode) S.prog=S.progAll[md];
   saveProg();
   try{
     var cu=Array.isArray(o.custom)? o.custom : [];
@@ -3480,8 +3776,14 @@ document.getElementById('btnVoice').onclick=function(){
 };
 document.getElementById('btnStart').onclick=function(){
   Sfx.ac(); Sound.unlock(); Voice.init();
+  setMode('bh');                                   // 原版入口：确保切回黑洞模式
   var first=0; for(var i=0;i<LEVELS.length;i++){ if(!S.prog.passed[i]){ first=i; break; } first=i; }
   resize(); startLevel(first);
+};
+document.getElementById('btnRaceStart').onclick=function(){
+  Sfx.ac(); Sound.unlock(); Voice.init();
+  setMode('race');                                 // 赛车分支入口：独立进度，不影响黑洞版
+  openGarage();
 };
 document.getElementById('btnTeacher').onclick=function(){ Sfx.click(); openSettings(); };
 document.getElementById('btnProgStart').onclick=function(){ Sfx.click(); openProgress(); };
@@ -3493,7 +3795,9 @@ document.getElementById('btnClean').onclick=function(){
 };
 document.getElementById('btnCopyLink').onclick=function(){ Sfx.click(); copyNewLink(); };
 document.getElementById('btnNext').onclick=function(){
-  Sfx.click(); resize(); startLevel(Math.min(LEVELS.length-1,S.li+1));
+  var nx=nextLevelIdx(S.li);
+  if(nx<0){ document.getElementById('winMask').classList.add('hide'); openLevels(); return; }
+  Sfx.click(); resize(); startLevel(nx);
 };
 document.getElementById('btnRetry').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };
 document.getElementById('btnRedo').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };  // 关内随时重来本关
