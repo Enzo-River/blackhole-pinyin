@@ -811,7 +811,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v19';
+var BUILD = 'v20';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1201,7 +1201,31 @@ var Sfx = {
   win:function(){ [523,659,784,1047].forEach(function(f,i){ Sfx.tone(f,0.28,'triangle',0.13,i*0.09); }); },
   star:function(){ [784,1047].forEach(function(f,i){ Sfx.tone(f,0.22,'sine',0.12,i*0.08); }); },
   nope:function(){ this.tone(300,0.16,'sawtooth',0.07,0); this.tone(220,0.2,'sawtooth',0.06,0.12); },
-  click:function(){ this.tone(520,0.07,'square',0.05,0); }
+  click:function(){ this.tone(520,0.07,'square',0.05,0); },
+  // v20 赛车：撞上石头/路障 —— 低频闷响 + 短促噪声（像「哐」的一声，不刺耳）
+  crash:function(){
+    if(!S.sfxOn) return; var ac=this.ac(); if(!ac) return;
+    var dur=0.26, t0=ac.currentTime;
+    var len=Math.max(1,Math.floor(ac.sampleRate*dur)), buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+    for(var i=0;i<len;i++){ var k=1-i/len; d[i]=(Math.random()*2-1)*k*k; }
+    var src=ac.createBufferSource(); src.buffer=buf;
+    var f=ac.createBiquadFilter(); f.type='lowpass';
+    f.frequency.setValueAtTime(1500,t0); f.frequency.exponentialRampToValueAtTime(220,t0+dur);
+    var g=ac.createGain(); g.gain.setValueAtTime(0.18,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t0);
+    this.tone(110,0.18,'sine',0.10,0);
+  },
+  // v20 赛车：压到油渍「打滑」—— 一个下滑的短滑音
+  slip:function(){
+    if(!S.sfxOn) return; var ac=this.ac(); if(!ac) return;
+    var t0=ac.currentTime, o=ac.createOscillator(), g=ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(900,t0);
+    o.frequency.exponentialRampToValueAtTime(420,t0+0.30);
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.linearRampToValueAtTime(0.07,t0+0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+0.34);
+    o.connect(g); g.connect(ac.destination); o.start(t0); o.stop(t0+0.36);
+  }
 };
 
 /* ---------- 5. 全局状态 ---------- */
@@ -1210,6 +1234,8 @@ var S = {
   mode:'bh',                  // 'bh' 黑洞（原版） / 'race' 赛车（新增分支入口）
   car:'sedan',                // 赛车模式当前车型
   steer:0,                    // 赛车模式手动方向：-1 左 / 0 松开 / 1 右
+  obsOn:true,                 // 赛车模式：路上是否放障碍物（石头/锥桶/油桶/油渍）
+  obs:[],                     // 赛车模式当前关卡的障碍物
   li:0, level:null,
   planets:[], bh:null, bgStars:[], parts:[], rings:[],
   ti:0, step:0,            // spell 关：任务序号 / 0声母 1韵母 2声调
@@ -1420,6 +1446,7 @@ function layout(){
     S.bh.y=Math.max(ARENA.y0+r2, Math.min(yM, S.bh.y));
     if(S.bh.tx!==undefined){ S.bh.tx=Math.max(0,Math.min(W,S.bh.tx)); S.bh.ty=Math.max(0,Math.min(H,S.bh.ty)); }
   }
+  clampObs();   // v20：障碍物跟着可视场地一起夹回来，旋转后不会留在屏外
 }
 
 /* ---------- 7. 生成星球 ---------- */
@@ -1515,6 +1542,7 @@ function startLevel(i, forceLv){
   S.lvToken++;              // 关卡令牌换代
   S.li=i; S.level=forceLv || LEVELS[i];
   S.planets=[]; S.parts=[]; S.floats=[]; S.eaten={}; S.ti=0; S.step=0; S.got='';
+  S.obs=[];                          // v20：进关清空上一关的障碍物
   S.combo=0; S.comboT=0; S.winT=0; S.fireT=0;
   S.tut=0; S.tutT=0;                 // 新手引导状态（下面按需开启）
   S.hint=''; S.hintT=0;
@@ -1552,6 +1580,10 @@ function startLevel(i, forceLv){
   }
   Sound.warm(warmList());
   S.scene='play';
+  buildObs();                        // v20：赛车模式铺一关的石头/路障/油渍（黑洞模式内直接返回）
+  if(S.mode==='race' && S.obs.length && !S.obsTipShown){
+    S.obsTipShown=1; toast('路上有石头和路障，撞上去会减速哦 🪨', 2.6);
+  }
   // 新手引导：第一次进入（或清空记录后）播放「点卡片→黑洞飞过去吃」的演示，点一下即学会并消失
   if(!S.prog.seenTut){ S.tut=1; S.tutT=0; }
   document.getElementById('btnRedo').style.display='';   // 关内随时可「重来本关」
@@ -1726,7 +1758,8 @@ function onEaten(p){
     cheerPop(p.x,p.y);
     // 笔顺自动演示（v16）：吃掉一个字后播一次该字笔顺，动画放完自动收起、不打断闯关。
     // 每个字只在本次游戏里自动播一次，重玩不再打扰；设置里可关掉。
-    if(S.autoWrite!==false && hwSupport(p.zi||p.id) && !WRI.autoShown[p.zi||p.id]){
+    // v20：赛车模式不弹笔顺 —— 车正在开，突然盖上田字格会打断「开车」的节奏（书写仍可在黑洞模式/关卡地图里做）
+    if(S.mode!=='race' && S.autoWrite!==false && hwSupport(p.zi||p.id) && !WRI.autoShown[p.zi||p.id]){
       WRI.autoShown[p.zi||p.id]=1;
       var _zi=p.zi||p.id, _py=p.py||'';
       lvLater(function(){
@@ -1901,6 +1934,7 @@ function draw(dt){
   // 或 drawPlanet 提前 return 漏夹），立刻快速飞回屏幕中部，杜绝「卡在屏外吃不到」。
   recoverStray();
   updateRecallBtn();               // 有卡飘出可视区时，顶栏 🎯 按钮高亮提醒
+  drawObs(g,dt);                   // v20：赛车路面障碍物（画在卡片下面 → 不挡点字卡）
   // 星球（存活）
   S.planets.forEach(function(p){ if(p.st==='alive') drawPlanet(g,p,dt); });
   // 黑洞
@@ -2735,12 +2769,255 @@ function drawTrack(g,dt){
   }
 }
 
+/* ---------- 赛车模式 · 路面障碍物（v20）
+   为什么加：赛车模式原先就是「点卡片 → 车直线开过去」，路上一片空，跑几十关都一样。
+   加几块石头、路障锥、油桶和油渍，让每次开车都要绕一下、撞一下，手感才有起伏。
+   设计约束（都踩过坑）：
+   ① 纯 Canvas 自绘，不引任何图片 → 首屏体积不变、离线可用；
+   ② 只与「车」做圆碰撞，不参与吃卡判定 → 绝不会影响主线（点卡片照样吃得到）；
+   ③ 每个障碍物都能被撞碎/撞飞（石头 hp=2、其余 hp=1）→ 不存在「车顶死在石头上开不过去」；
+   ④ 生成时避开卡片和出生点，且障碍物画在卡片下面 → 不会挡住点字卡。
+   撞碎石头只给飘字和粒子，不加星星 —— 进度必须只由「认对字」产生。 */
+var OBS_KINDS=['rock','rock','cone','barrel','oil'];   // 石头占四成，路上「石头多」符合直觉
+function obsBaseR(){
+  var aw=(ARENA.x1-ARENA.x0)||W, ah=(ARENA.y1-ARENA.y0)||H;
+  return Math.max(15, Math.min(34, Math.min(aw,ah)*0.072));
+}
+function buildObs(){
+  S.obs=[];
+  if(S.mode!=='race' || S.scene!=='play' || S.obsOn===false) return;
+  var aw=ARENA.x1-ARENA.x0, ah=ARENA.y1-ARENA.y0;
+  if(aw<90 || ah<90) return;                        // 场地太扁（极端横屏）就不放，免得全堵死
+  var n=Math.max(4, Math.min(7, Math.round(aw*ah/42000)));   // 手机约 5 个、平板封顶 7 个
+  var R=obsBaseR();
+  /* 分区放置：把场地切格，每格最多一个障碍物。纯随机撒点会全挤在「没卡片的那半边」，
+     上一版实测 6 个障碍物全落在 120px 高的一条带子里，路上看着像堆货。 */
+  var cols=Math.max(1, Math.round(Math.sqrt(n*aw/ah))), rows=Math.max(1, Math.ceil(n/cols));
+  var cw=aw/cols, ch=ah/rows;
+  for(var k=0;k<n;k++){
+    var cc=k%cols, rk=Math.floor(k/cols);
+    var gx=ARENA.x0+cw*cc, gy=ARENA.y0+ch*rk;
+    var kind=OBS_KINDS[(Math.random()*OBS_KINDS.length)|0];
+    var r=(kind==='oil') ? R*1.30 : (kind==='rock' ? R*(0.78+Math.random()*0.45) : R*0.82);
+    var o={kind:kind, r:r, x:0, y:0, ang:Math.random()*6.283, hp:(kind==='rock'?2:1),
+      hit:0, shake:0, cool:0, fly:0, fvx:0, fvy:0, fvAng:0, noHit:false, dead:false, verts:null};
+    if(kind==='rock'){                              // 预生成不规则多边形顶点：每块石头长得都不一样
+      o.verts=[];
+      var vn=7+((Math.random()*3)|0);
+      for(var vi=0;vi<vn;vi++){
+        var va=vi/vn*6.283;
+        o.verts.push([Math.cos(va)*(0.74+Math.random()*0.30), Math.sin(va)*(0.74+Math.random()*0.30)]);
+      }
+    }
+    /* 四级尝试，越往后越宽松：本格严格 → 本格宽松 → 全场地严格 → 全场地宽松。
+       只在本格试是不够的：车开局停在下方中央，下半格常常整块都在「贴脸禁区」里，
+       一格失败就少一个障碍物（实测 4 个格子只放下 3 个）。 */
+    if(tryPlaceObs(o, gx, gy, cw, ch, 34) ||
+       tryPlaceObs(o, gx, gy, cw, ch, 10) ||
+       tryPlaceObs(o, ARENA.x0, ARENA.y0, aw, ah, 34) ||
+       tryPlaceObs(o, ARENA.x0, ARENA.y0, aw, ah, 10)) S.obs.push(o);
+  }
+}
+/* 在给定矩形内随机找一个不与车/卡片/其它障碍物打架的落点；成功返回 true */
+function tryPlaceObs(o, x0, y0, w, h, pad){
+  var tries=0;
+  while(tries++<90){
+    o.x=Math.max(ARENA.x0+o.r+4, Math.min(ARENA.x1-o.r-4, x0+2+Math.random()*Math.max(1,w-4)));
+    o.y=Math.max(ARENA.y0+o.r+4, Math.min(ARENA.y1-o.r-4, y0+2+Math.random()*Math.max(1,h-4)));
+    if(S.bh && Math.hypot(o.x-S.bh.x, o.y-S.bh.y) < S.bh.r*1.7+o.r) continue;      // 别一开局就贴脸
+    var bad=false, pi, oi;
+    for(pi=0; pi<S.planets.length; pi++){
+      var p=S.planets[pi];
+      if(Math.hypot(o.x-p.x, o.y-p.y) < p.r+o.r+pad){ bad=true; break; }           // 卡片跟前不放障碍物
+    }
+    if(bad) continue;
+    for(oi=0; oi<S.obs.length; oi++){
+      var q=S.obs[oi];
+      if(Math.hypot(o.x-q.x, o.y-q.y) < (q.r+o.r)*1.06){ bad=true; break; }        // 障碍物别挤成一堆（仅防重叠）
+    }
+    if(bad) continue;
+    return true;
+  }
+  return false;
+}
+/* 横竖屏切换 / 地址栏伸缩后，把障碍物夹回当前可视场地（否则会停在屏外、车撞不到也看不见） */
+function clampObs(){
+  if(!S.obs || !S.obs.length) return;
+  for(var i=0;i<S.obs.length;i++){
+    var o=S.obs[i];
+    o.x=Math.max(ARENA.x0+o.r, Math.min(ARENA.x1-o.r, o.x));
+    o.y=Math.max(ARENA.y0+o.r, Math.min(ARENA.y1-o.r, o.y));
+  }
+}
+function drawObs(g,dt){
+  if(S.mode!=='race' || !S.obs || !S.obs.length) return;
+  var arr=S.obs, w=0;
+  for(var i=0;i<arr.length;i++){
+    var o=arr[i];
+    if(o.hit>0) o.hit=Math.max(0, o.hit-dt*3.2);
+    if(o.shake>0) o.shake=Math.max(0, o.shake-dt*2.6);
+    if(o.cool>0) o.cool=Math.max(0, o.cool-dt);
+    if(o.fly){                                    // 被撞飞：滑出去 + 旋转 + 淡出
+      o.fly+=dt;
+      o.x+=o.fvx*dt; o.y+=o.fvy*dt; o.ang+=o.fvAng*dt;
+      o.fvx*=1-Math.min(1,dt*1.1); o.fvy*=1-Math.min(1,dt*1.1);
+      if(o.fly>0.85) o.dead=true;
+    }
+    if(o.dead){ continue; }                       // 就地剔除，不重建数组
+    arr[w++]=o;
+    drawObsOne(g,o);
+  }
+  arr.length=w;
+}
+function drawObsOne(g,o){
+  var a = o.fly ? Math.max(0, 1-(o.fly-0.50)/0.35) : 1;
+  var sh = o.shake>0 ? Math.sin(o.shake*46)*o.shake*4 : 0;   // 被撞后左右晃一下
+  g.save();
+  g.globalAlpha=a;
+  g.translate(o.x+sh, o.y);
+  g.fillStyle='rgba(0,0,0,.30)';                             // 地面投影，压住画面、有重量感
+  g.beginPath(); g.ellipse(o.r*0.10, o.r*0.44, o.r*0.98, o.r*0.42, 0, 0, 6.283); g.fill();
+  g.save(); g.rotate(o.ang);
+  if(o.kind==='rock'){
+    var sc=(o.hit>0)? 1+o.hit*0.10 : 1;
+    g.scale(sc,sc);
+    var v=o.verts, i, px, py;
+    g.beginPath();
+    for(i=0;i<v.length;i++){ px=v[i][0]*o.r; py=v[i][1]*o.r; if(i) g.lineTo(px,py); else g.moveTo(px,py); }
+    g.closePath();
+    var lg=g.createLinearGradient(-o.r,-o.r,o.r*0.6,o.r);
+    lg.addColorStop(0,'#9aa4b2'); lg.addColorStop(0.55,'#7b8592'); lg.addColorStop(1,'#464e59');
+    g.fillStyle=lg; g.fill();
+    g.strokeStyle='rgba(26,32,42,.85)'; g.lineWidth=Math.max(1.6,o.r*0.09); g.stroke();
+    g.globalAlpha=a*0.50;                                   // 顶面高光：让石头看起来是立体的
+    g.fillStyle='#cbd4df';
+    g.beginPath();
+    for(i=0;i<v.length;i++){
+      var qx=v[i][0]*o.r*0.50-o.r*0.14, qy=v[i][1]*o.r*0.50-o.r*0.20;
+      if(i) g.lineTo(qx,qy); else g.moveTo(qx,qy);
+    }
+    g.closePath(); g.fill();
+    g.globalAlpha=a;
+  }else if(o.kind==='cone'){
+    /* 雪糕筒：画成「立着的梯形锥」而不是同心圆 —— 同心圆在俯视里就是个橙色甜甜圈，
+       孩子认不出是什么（第一版实测截图确认过）。梯形 + 反光带一眼就懂。 */
+    g.beginPath();                                   // 锥体
+    g.moveTo(-o.r, o.r*0.52);
+    g.lineTo(-o.r*0.24, -o.r*0.78);
+    g.lineTo(o.r*0.24, -o.r*0.78);
+    g.lineTo(o.r, o.r*0.52);
+    g.closePath();
+    var cg=g.createLinearGradient(-o.r,0,o.r,0);
+    cg.addColorStop(0,'#d0560f'); cg.addColorStop(0.45,'#f8813a'); cg.addColorStop(1,'#c14b0a');
+    g.fillStyle=cg; g.fill();
+    g.strokeStyle='rgba(96,32,0,.75)'; g.lineWidth=Math.max(1.2,o.r*0.09); g.stroke();
+    g.save(); g.clip();                             // 反光带（裁在锥体里）
+    g.fillStyle='#f6efe2';
+    g.fillRect(-o.r*1.1, -o.r*0.26, o.r*2.2, o.r*0.20);
+    g.fillRect(-o.r*1.1,  o.r*0.10, o.r*2.2, o.r*0.16);
+    g.restore();
+    g.fillStyle='#f8813a';                          // 底座
+    g.beginPath(); g.ellipse(0, o.r*0.56, o.r*0.94, o.r*0.26, 0, 0, 6.283); g.fill();
+    g.strokeStyle='rgba(96,32,0,.6)'; g.lineWidth=Math.max(1,o.r*0.08); g.stroke();
+  }else if(o.kind==='barrel'){
+    /* 油桶：桶身 + 顶盖椭圆 + 两道箍。第一版俯视同心圆 + 十字像「禁止通行」路牌，辨识度差。 */
+    var by2=-o.r*0.80, bhd=o.r*1.62, bwd=o.r*1.44;
+    g.fillStyle='#c98d12'; roundRect(g, -bwd/2, by2, bwd, bhd, o.r*0.22); g.fill();
+    g.strokeStyle='rgba(72,46,0,.68)'; g.lineWidth=Math.max(1.2,o.r*0.09); g.stroke();
+    g.fillStyle='rgba(120,78,0,.42)';                // 两道箍
+    g.fillRect(-bwd/2, by2+bhd*0.30, bwd, o.r*0.14);
+    g.fillRect(-bwd/2, by2+bhd*0.62, bwd, o.r*0.14);
+    g.fillStyle='#f0bb3a';                          // 顶盖
+    g.beginPath(); g.ellipse(0, by2, bwd*0.50, o.r*0.22, 0, 0, 6.283); g.fill();
+    g.strokeStyle='rgba(72,46,0,.55)'; g.lineWidth=Math.max(1,o.r*0.08); g.stroke();
+    g.fillStyle='rgba(88,58,0,.50)';                // 加油口
+    g.beginPath(); g.ellipse(0, by2, o.r*0.16, o.r*0.08, 0, 0, 6.283); g.fill();
+  }else{                                                     // oil 油污：不挡路，压上去打滑
+    /* 底色压深 + 两道虹彩反光 + 亮边：第一版只画一团深色椭圆，在深色路面上看着像「黑洞」，
+       会误导孩子。加上油膜该有的彩色反光，一眼就是「地上有油」。 */
+    var oy=o.r*0.64;
+    g.fillStyle='rgba(6,9,16,.78)';
+    g.beginPath(); g.ellipse(0,0,o.r,oy,0,0,6.283); g.fill();
+    var og=g.createLinearGradient(-o.r*0.9,0,o.r*0.9,0);
+    og.addColorStop(0,'rgba(120,90,230,0)');
+    og.addColorStop(0.30,'rgba(162,122,255,.52)');
+    og.addColorStop(0.50,'rgba(92,220,255,.48)');
+    og.addColorStop(0.72,'rgba(122,255,190,.34)');
+    og.addColorStop(1,'rgba(120,90,230,0)');
+    g.fillStyle=og;
+    g.beginPath(); g.ellipse(0,-o.r*0.10,o.r*0.80,oy*0.44,0,0,6.283); g.fill();
+    g.strokeStyle='rgba(150,220,255,.42)'; g.lineWidth=Math.max(1.2,o.r*0.07);
+    g.beginPath(); g.ellipse(0,0,o.r*0.96,oy*0.94,0,0,6.283); g.stroke();
+    g.fillStyle='rgba(8,11,18,.62)';                         // 溅到旁边的小油点：更像「地上有油」
+    g.beginPath(); g.ellipse(o.r*0.88,-o.r*0.36,o.r*0.16,o.r*0.10,0.6,0,6.283); g.fill();
+    g.beginPath(); g.ellipse(-o.r*0.74, o.r*0.32,o.r*0.12,o.r*0.08,-0.4,0,6.283); g.fill();
+  }
+  g.restore();
+  g.globalAlpha=1;
+  g.restore();
+}
+/* 车 × 障碍物：圆形碰撞。撞上 → 沿法线推出 + 车头掰到切线（蹭着边滑过去）+ 掉速 + 撞碎。
+   推出是必须的：只减速不分离，车会陷在障碍物里反复重叠，看起来像穿模。 */
+var OBS_CAR_K=0.62;          // 车的碰撞半径系数（比车身短一些，手感更宽容）
+function collideObs(b,dt){
+  if(S.mode!=='race' || !S.obs || !S.obs.length) return;
+  var cr=b.r*OBS_CAR_K;
+  for(var i=0;i<S.obs.length;i++){
+    var o=S.obs[i];
+    if(o.noHit || o.fly) continue;
+    var dx=b.x-o.x, dy=b.y-o.y, d=Math.hypot(dx,dy)||0.001;
+    if(o.kind==='oil'){
+      if(d < cr+o.r*0.82 && o.cool<=0){
+        o.cool=1.0;
+        b.spd=(b.spd||0)*0.40;
+        floatText(b.x, b.y-b.r*1.5, '打滑~', '#8fd6ff', 0.9);
+        try{ Sfx.slip(); }catch(e){}
+      }
+      continue;
+    }
+    var minD=cr+o.r*0.88;
+    if(d>=minD) continue;
+    var nx=dx/d, ny=dy/d;
+    b.x=o.x+nx*minD; b.y=o.y+ny*minD;            // ① 先分离，杜绝穿模
+    var tx2=-ny, ty2=nx, side=1;                 // ② 车头掰向切线（朝目标那一侧）
+    if(b.tx!==undefined && (tx2*(b.tx-o.x)+ty2*(b.ty-o.y))<0) side=-1;
+    b.ang=Math.atan2(ty2*side, tx2*side);
+    b.spd=(b.spd||0)*0.45;                       // ③ 掉速：撞一下明显慢下来
+    o.hit=1; o.shake=1;
+    if(o.cool>0) continue;                       // ④ 同一块障碍物 0.35s 内只结算一次
+    o.cool=0.35;
+    o.hp--;
+    S.shakeT=Math.max(S.shakeT,0.16);            // 屏幕轻抖，撞击才有分量
+    try{ Sfx.crash(); }catch(e){}
+    if(o.hp>0){
+      floatText(o.x, o.y-o.r-6, '咚！', '#ffd166', 0.8);
+      continue;
+    }
+    o.noHit=true;
+    if(o.kind==='rock'){                         // 石头碎成石屑
+      for(var q=0;q<14;q++){
+        var qa=Math.random()*6.283, qs=50+Math.random()*190;
+        S.parts.push({x:o.x, y:o.y, vx:Math.cos(qa)*qs, vy:Math.sin(qa)*qs,
+          life:0.45+Math.random()*0.5, t:0, c:(Math.random()<0.5?'#8b95a3':'#5a636e'), sz:2+Math.random()*3});
+      }
+      floatText(o.x, o.y-o.r-6, '碎啦！', '#cfe0ff', 0.9);
+      o.dead=true;                               // 石头直接消失（已经炸成粒子）
+    }else{                                       // 锥桶 / 油桶：撞飞出去，转着圈淡出
+      o.fly=0.0001;
+      o.fvx=(b.spd||120)*Math.cos(b.ang)*0.9+ (Math.random()-0.5)*80;
+      o.fvy=(b.spd||120)*Math.sin(b.ang)*0.9+ (Math.random()-0.5)*80;
+      o.fvAng=(Math.random()<0.5?-1:1)*(6+Math.random()*4);
+      floatText(o.x, o.y-o.r-6, '哐！', '#ffd166', 0.85);
+    }
+  }
+}
+
 function drawBH(g,b,dt,demo){
   b.disk += dt*1.5;
   // 目标靠近
   if(!demo){
     if(b.tgt && b.tgt.st==='alive'){ b.tx=b.tgt.x; b.ty=b.tgt.y; }
-    if(S.mode==='race'){ driveCar(b,dt); }             // 赛车：先转向再前进
+    if(S.mode==='race'){ driveCar(b,dt); collideObs(b,dt); }   // 赛车：先转向再前进，前进后结算障碍物碰撞
     else{
       var k=1-Math.pow(diffOn().spd,dt);   // 难度档决定黑洞追星的-speed
       b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
@@ -2964,7 +3241,7 @@ function openLevels(){
     '<button class="btn" id="btnWeakMiss">🔁 没认会的字</button>'+
     '<button class="btn" id="btnWeakErr">🔥 点错过的音</button>'+
     '<button class="btn" id="btnMistake">📕 错题本</button>'+
-    '<button class="btn" id="btnWritePrac">✍ 书写练习</button>';
+    (isRace? '' : '<button class="btn" id="btnWritePrac">✍ 书写练习</button>');   // v20：赛车模式不提供书写入口
   sc.appendChild(top);
   var bsw=document.getElementById('btnSwitchMode');
   if(bsw) bsw.onclick=function(){ Sfx.click(); setMode(isRace?'bh':'race'); openLevels(); };
@@ -3029,16 +3306,23 @@ function openSettings(){
     ['🎵 游戏音效', 'sfxOn', '吞噬声、奖励声'],
     ['🈶 星球上显示示例汉字', 'showZi', '如 b 显示“玻”，帮助理解发音'],
     ['💡 高亮提示正确答案', 'hintOn', '关掉可提高难度'],
-    ['✍ 吃掉汉字后自动看笔顺', 'autoWrite', '识字关每吃一个字播一次笔顺；关掉则不打断闯关']
+    ['✍ 吃掉汉字后自动看笔顺', 'autoWrite', '识字关每吃一个字播一次笔顺；关掉则不打断闯关'],
+    ['🪨 赛车路上有障碍物', 'obsOn', '石头会撞碎、路障会被撞飞、油渍会打滑；关掉则一路畅通']
   ];
   rows.forEach(function(r){
-    var def = (r[1]==='autoWrite');   // 笔顺自动演示默认开
+    // v20：笔顺开关只属黑洞模式，障碍物开关只属赛车模式 —— 各模式只显示自己用得上的那一条
+    if(r[1]==='autoWrite' && S.mode==='race') return;
+    if(r[1]==='obsOn' && S.mode!=='race') return;
+    var def = (r[1]==='autoWrite' || r[1]==='obsOn');   // 这两个默认开
     if(S[r[1]]===undefined) S[r[1]]=def;
     var d=document.createElement('div'); d.className='sw';
     d.innerHTML='<div>'+r[0]+'<div style="font-size:12px;opacity:.55">'+r[2]+'</div></div>';
     var b=document.createElement('button'); b.className='btn'+(S[r[1]]?' on':'');
     b.textContent=S[r[1]]?'开':'关';
-    b.onclick=function(){ S[r[1]]=!S[r[1]]; b.classList.toggle('on',S[r[1]]); b.textContent=S[r[1]]?'开':'关'; Sfx.click(); };
+    b.onclick=function(){
+      S[r[1]]=!S[r[1]]; b.classList.toggle('on',S[r[1]]); b.textContent=S[r[1]]?'开':'关'; Sfx.click();
+      if(r[1]==='obsOn' && S.scene==='play') buildObs();   // 开关即时生效（不用退出重进关卡）
+    };
     d.appendChild(b); sc.appendChild(d);
   });
   var t=document.createElement('div'); t.className='tip';
@@ -3050,8 +3334,11 @@ function openSettings(){
       :'正在实测…（不影响出字，本地发音包已就绪）'))+'）'+
     '<br><b>教学建议：</b>1～9 关为自由认读，适合第一课时热身；10～12 关为拼读任务，建议老师在旁边带读“声母m—韵母a—一声—妈”。'+
     '<br><b>操作：</b>点星球让黑洞飞过去，也可以直接按住黑洞拖动。'+
-    '<br><b>赛车模式（v18）：</b>开始页点「🏎 赛车闯关」即可切换。赛车模式只跑识字关，进度与黑洞模式<b>分开记录</b>，'+
-    '字库、发音、笔顺书写全部共用 —— 换种玩法，学的东西一样。车型为类别（消防车 / 救护车等），不使用任何汽车品牌商标。'+
+    '<br><b>赛车模式（v20）：</b>开始页点「🏎 赛车闯关」即可切换。赛车模式只跑识字关，进度与黑洞模式<b>分开记录</b>，'+
+    '字库、发音全部共用 —— 换种玩法，学的东西一样。车型为类别（消防车 / 救护车等），不使用任何汽车品牌商标。'+
+    '<br><b>赛车路面（v20）：</b>路上有石头、雪糕筒、油桶、油污 —— 撞石头会碎、撞雪糕筒会撞飞、压到油污会打滑，'+
+    '只影响车速，<b>不会挡住吃字</b>，而且在设置里可以关掉。赛车模式<b>不弹笔顺</b>（田字格会盖住赛道打断开车），'+
+    '要练笔顺请换回黑洞模式。'+
     '<br><b>关于笔顺书写（v16）：</b>笔顺动画与描红由 <b>hanzi-writer</b>（MIT）驱动；'+
     '汉字笔顺数据来自 <b>Make Me A Hanzi</b> 项目，其字形取自 Arphic Technology（华康科技）1999 年'+
     '以宽松许可发布的字体，依 <b>Arphic Public License</b> 再发布（许可全文见随附 ARPHICPL.TXT）。'+
@@ -3663,6 +3950,8 @@ function writeStatus(t,cls){
 }
 function openWrite(ch, opts){
   opts=opts||{};
+  // v20：赛车模式不做书写（避免田字格盖住赛道、打断开车）。兜底拦截，任何入口都进不来。
+  if(S.mode==='race') return;
   if(!hwSupport(ch)){ toast('这个字暂时没有笔画数据',2.2); return; }
   hwEnsure(function(){
     if(!HW || !HW_DATA) return;
@@ -3770,6 +4059,7 @@ function writeQuiz(){
 }
 /* 书写练习页：列出「已认过且有笔画数据」的字 */
 function openWritePractice(){
+  if(S.mode==='race'){ toast('书写练习请到黑洞模式里做哦', 2.2); return; }   // v20
   // 按「关卡教学顺序」列出已认过的字（不是按 Unicode 乱排，孩子复习时跟上课顺序一致）
   var known=[], seen={};
   LEVELS.forEach(function(L){
