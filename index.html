@@ -33,6 +33,18 @@
     border-radius:12px;padding:8px 12px;font-size:15px;cursor:pointer;line-height:1}
   .btn:active{transform:scale(.96)}
   .btn.on{background:rgba(120,255,200,.2);border-color:rgba(120,255,200,.5)}
+  /* ---- v21 防误触：破坏性按钮要「按住不放」才生效（☰ 回关卡 / ↻ 重来本关）----
+     小朋友玩的时候手滑点一下，不会退出关卡、也不会把这一关白玩；
+     按住 0.7 秒按钮从底往上灌满，放手才执行。 */
+  .btn.holdable{position:relative;overflow:hidden}
+  .btn.holdable::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:0;
+    background:linear-gradient(0deg,rgba(120,255,200,.52),rgba(120,255,200,.20));
+    clip-path:inset(calc(100% - var(--hp,0%)) 0 0 0);transition:opacity .1s}
+  .btn.holdable.holding::after{opacity:1}
+  .btn.holdable.holding{border-color:rgba(120,255,200,.68);transform:none}
+  .btn.shake{animation:btnShake .3s}
+  @keyframes btnShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}
+    50%{transform:translateX(3px)}75%{transform:translateX(-2px)}}
   /* 赛车模式左右方向键 */
   #steerPad{position:fixed;left:0;right:0;bottom:0;height:0;z-index:6;pointer-events:none}
   .steerBtn{position:absolute;width:66px;height:66px;border-radius:50%;
@@ -70,6 +82,18 @@
   /* 遮罩 */
   .mask{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
     background:rgba(4,6,18,.86);backdrop-filter:blur(6px);overflow:auto;padding:12px 0;touch-action:pan-y}
+  /* v21 防误触：手机侧滑返回 / 安卓返回键的确认条 —— 不铺满全屏，不打断画面 */
+  #backGuard{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 76px);transform:translateX(-50%);
+    width:min(92vw,360px);z-index:18;display:flex;flex-direction:column;gap:10px;
+    background:linear-gradient(160deg,#1a2150,#0c1028);border:1px solid rgba(150,180,255,.34);
+    border-radius:18px;padding:14px 16px;box-shadow:0 18px 50px rgba(0,0,0,.62);
+    animation:bgIn .16s ease-out}
+  @keyframes bgIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}
+    to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  #backGuard .bgt{font-size:15px;line-height:1.5}
+  #backGuard .bgt small{display:block;font-size:12px;opacity:.62;margin-top:3px}
+  #backGuard .bgb{display:flex;gap:8px}
+  #backGuard .bgb .btn{flex:1;padding:10px 8px;font-size:14px}
   .card{background:linear-gradient(160deg,#141a3a,#0c1028);border:1px solid rgba(140,170,255,.28);
     border-radius:24px;padding:26px 28px;max-width:560px;width:92%;text-align:center;
     box-shadow:0 24px 70px rgba(0,0,0,.6);
@@ -313,6 +337,16 @@
 <div id="steerPad" style="display:none">
   <div class="steerBtn" id="btnSteerL">◀</div>
   <div class="steerBtn" id="btnSteerR">▶</div>
+</div>
+
+<!-- v21 防误触：手机从屏幕边缘侧滑、或按安卓返回键时，先在这里问一句，
+     免得小朋友手一滑整页退掉、一关白玩。 -->
+<div id="backGuard" class="hide">
+  <div class="bgt">要离开这一关吗？<small>已经吃掉的字都记住了，随时可以回来接着玩</small></div>
+  <div class="bgb">
+    <button class="btn" id="bgStay" style="background:linear-gradient(135deg,#6ea8ff,#8f6eff);border:none;font-weight:700">▶ 继续玩</button>
+    <button class="btn" id="bgLeave">离开本关</button>
+  </div>
 </div>
 
 <!-- 开始页 -->
@@ -811,7 +845,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v20';
+var BUILD = 'v21';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -1580,6 +1614,7 @@ function startLevel(i, forceLv){
   }
   Sound.warm(warmList());
   S.scene='play';
+  BACKG.inLevel=true; armBack();     // v21：进关压一条哨兵，系统返回键先问一句再退
   buildObs();                        // v20：赛车模式铺一关的石头/路障/油渍（黑洞模式内直接返回）
   if(S.mode==='race' && S.obs.length && !S.obsTipShown){
     S.obsTipShown=1; toast('路上有石头和路障，撞上去会减速哦 🪨', 2.6);
@@ -1671,6 +1706,109 @@ function updateGoal(){
 }
 
 function toast(msg, sec){ S.hint=msg; S.hintT=sec||2.2; }
+
+/* ---------- v21 防误触 ----------
+   手机上有两条「手一滑就白玩」的路：
+     ① 顶栏「☰ 关卡」「↻ 重来本关」被误点 —— 一关白玩；
+     ② 从屏幕左缘侧滑 / 按安卓返回键 —— 整个页面直接退掉（微信里等于关掉游戏）。
+   分别处理：破坏性按钮改成「按住 0.7 秒」才生效；系统返回用 history 压一条哨兵记录
+   先拦下来，问一句「继续玩 / 离开本关」。 */
+
+var HOLD_MS=700;                    // 破坏性按钮要按住多久才生效
+
+/* 按住才生效：轻点 → 抖一下 + 提示；按住 → 按钮从底往上灌满，放手执行 */
+function bindHold(el, onFire, hintTxt){
+  if(!el) return;
+  el.classList.add('holdable');
+  var t0=0, raf=0, fired=false, on=false, sx=0, sy=0;
+  function paint(p){ el.style.setProperty('--hp',(Math.max(0,Math.min(1,p))*100).toFixed(1)+'%'); }
+  function stopRaf(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }
+  function tick(){
+    var p=(Date.now()-t0)/HOLD_MS;
+    paint(p);
+    if(p>=1 && !fired){
+      fired=true; on=false; stopRaf();
+      el.classList.remove('holding'); paint(0);
+      try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
+      onFire();
+      return;
+    }
+    raf=window.requestAnimationFrame(tick);
+  }
+  function pt(e){ return (e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e; }
+  function down(e){
+    if(e && e.cancelable) e.preventDefault();          // 别再补一次 click
+    var p=pt(e); sx=p.clientX; sy=p.clientY;
+    t0=Date.now(); fired=false; on=true;
+    el.classList.add('holding'); stopRaf(); tick();
+  }
+  function cancel(){
+    if(!on) return;
+    on=false; stopRaf(); el.classList.remove('holding'); paint(0);
+    if(!fired && hintTxt){
+      el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');   // 抖一下：告诉孩子「要按住」
+      toast(hintTxt, 2.4);
+    }
+  }
+  function move(e){
+    if(!on) return;
+    var p=pt(e);
+    if(Math.hypot(p.clientX-sx, p.clientY-sy) > 18){ cancel(); return; }   // 手指划走了 → 当放弃
+    if(e.cancelable) e.preventDefault();
+  }
+  el.addEventListener('touchstart', down, {passive:false});
+  el.addEventListener('touchmove', move, {passive:false});
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchcancel', cancel);
+  el.addEventListener('mousedown', down);
+  el.addEventListener('mousemove', move);
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+  el.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); });  // 只认长按
+}
+
+/* 系统返回：进关时 history 压一层哨兵，返回键先问一句再走 */
+var BACKG={inLevel:false, armed:false, allowAt:0, asking:false};
+function armBack(){
+  if(BACKG.armed) return;
+  try{ window.history.pushState({bhpy:1},''); BACKG.armed=true; }catch(e){}
+}
+function showBackGuard(){
+  BACKG.asking=true;
+  var g=document.getElementById('backGuard'); if(g) g.classList.remove('hide');
+}
+function hideBackGuard(){
+  BACKG.asking=false;
+  var g=document.getElementById('backGuard'); if(g) g.classList.add('hide');
+}
+/* 「离开本关」：回游戏首页（进度都存着），顺手把哨兵层吃掉，免得返回键要按两次 */
+function leaveLevel(){
+  hideBackGuard();
+  BACKG.inLevel=false;
+  S.scene='start';
+  document.getElementById('panel').classList.add('hide');
+  document.getElementById('winMask').classList.add('hide');
+  document.getElementById('startMask').classList.remove('hide');
+  document.getElementById('btnRedo').style.display='none';
+  document.getElementById('btnRecall').style.display='none';
+  var sp=document.getElementById('steerPad'); if(sp) sp.style.display='none';
+  if(BACKG.armed){ BACKG.armed=false; BACKG.allowAt=Date.now(); try{ window.history.back(); }catch(e){} }
+}
+window.addEventListener('popstate', function(){
+  BACKG.armed=false;                                       // 这一层已经被消费掉了
+  if(BACKG.allowAt && Date.now()-BACKG.allowAt < 2000){ BACKG.allowAt=0; hideBackGuard(); return; }
+  // 弹层优先：先收弹层再说，跟原生 App 的返回手感一致
+  var wp=document.getElementById('writeMask');
+  if(wp && !wp.classList.contains('hide')){ closeWrite(); if(BACKG.inLevel) armBack(); return; }
+  var pn=document.getElementById('panel');
+  if(pn && !pn.classList.contains('hide')){ closePanel(); if(BACKG.inLevel) armBack(); return; }
+  var wm=document.getElementById('winMask');
+  if(wm && !wm.classList.contains('hide')){ wm.classList.add('hide'); openLevels(); return; }
+  if(BACKG.inLevel){
+    if(!BACKG.asking){ armBack(); showBackGuard(); return; }   // 第一次：拦住，问一句
+    leaveLevel();                                              // 已经在问，再按一次 → 走
+  }
+});
 
 /* ---------- 9. 交互 ---------- */
 function pos(e){ var r=cv.getBoundingClientRect(); var p=(e.touches&&e.touches[0]?e.touches[0]:e); return {x:p.clientX-r.left, y:p.clientY-r.top}; }
@@ -3339,6 +3477,11 @@ function openSettings(){
     '<br><b>赛车路面（v20）：</b>路上有石头、雪糕筒、油桶、油污 —— 撞石头会碎、撞雪糕筒会撞飞、压到油污会打滑，'+
     '只影响车速，<b>不会挡住吃字</b>，而且在设置里可以关掉。赛车模式<b>不弹笔顺</b>（田字格会盖住赛道打断开车），'+
     '要练笔顺请换回黑洞模式。'+
+    '<br><b>防误触（v21）：</b>顶栏「☰ 关卡」和「↻ 重来本关」要<b>按住 0.7 秒</b>（按钮会从下往上变成绿色）才生效，'+
+    '小朋友玩的时候手滑点一下，既不会退出关卡、也不会把这一关白玩一遍。'+
+    '<br><b>手机返回手势（v21）：</b>玩的时候从屏幕左边缘侧滑、或按安卓返回键，<b>不会直接退出游戏</b>了 —— '+
+    '会先弹一句「要离开这一关吗？」，点「继续玩」接着玩、点「离开本关」回游戏首页（进度都存着）。'+
+    '在关卡地图 / 设置 / 书写页里按返回，是<b>关闭当前弹窗</b>，跟手机 App 一样。'+
     '<br><b>关于笔顺书写（v16）：</b>笔顺动画与描红由 <b>hanzi-writer</b>（MIT）驱动；'+
     '汉字笔顺数据来自 <b>Make Me A Hanzi</b> 项目，其字形取自 Arphic Technology（华康科技）1999 年'+
     '以宽松许可发布的字体，依 <b>Arphic Public License</b> 再发布（许可全文见随附 ARPHICPL.TXT）。'+
@@ -4093,11 +4236,18 @@ function openWritePractice(){
   var bl=document.getElementById('btnBackLv'); if(bl) bl.style.display='none';
   document.getElementById('panel').classList.remove('hide');
 }
-function closePanel(){ document.getElementById('panel').classList.add('hide'); }
+function closePanel(){
+  document.getElementById('panel').classList.add('hide');
+  if(BACKG.inLevel) armBack();        // v21：关掉面板继续玩 → 返回键重新受保护
+}
 document.getElementById('panelClose').onclick=closePanel;
 document.getElementById('writeClose').onclick=function(){ Sfx.click(); closeWrite(); };
 
-document.getElementById('btnMenu').onclick=function(){ Sfx.click(); openLevels(); };
+/* v21：☰ 和 ↻ 改成「按住 0.7 秒」——小朋友滑一下不会退出关卡、也不会白玩一次 */
+bindHold(document.getElementById('btnMenu'), function(){ Sfx.click(); openLevels(); }, '按住不放才能回关卡列表哦');
+bindHold(document.getElementById('btnRedo'), function(){ Sfx.click(); resize(); startLevel(S.li); }, '按住不放才能重来本关哦');
+document.getElementById('bgStay').onclick=function(){ Sfx.click(); hideBackGuard(); };
+document.getElementById('bgLeave').onclick=function(){ Sfx.click(); leaveLevel(); };
 document.getElementById('btnSet').onclick=function(){ Sfx.click(); openSettings(); };
 document.getElementById('btnVoice').onclick=function(){
   S.voiceOn=!S.voiceOn; this.classList.toggle('on',S.voiceOn);
@@ -4106,7 +4256,7 @@ document.getElementById('btnVoice').onclick=function(){
 };
 document.getElementById('btnStart').onclick=function(){
   Sfx.ac(); Sound.unlock(); Voice.init();
-  setMode('bh');                                   // 原版入口：确保切回黑洞模式
+  if(S.mode!=='race') setMode('bh');               // v21：赛车玩家从首页再开始，仍是赛车模式（别被打回黑洞）
   var first=0; for(var i=0;i<LEVELS.length;i++){ if(!S.prog.passed[i]){ first=i; break; } first=i; }
   resize(); startLevel(first);
 };
@@ -4130,7 +4280,6 @@ document.getElementById('btnNext').onclick=function(){
   Sfx.click(); resize(); startLevel(nx);
 };
 document.getElementById('btnRetry').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };
-document.getElementById('btnRedo').onclick=function(){ Sfx.click(); resize(); startLevel(S.li); };  // 关内随时重来本关
 document.getElementById('btnRecall').onclick=function(){ recallCards(); };   // 字卡飘出可视区时一键召回屏幕中间
 /* 赛车模式左右方向键：按住持续转向，松开滑行停下（默认仍是点字卡自动开过去） */
 (function(){
