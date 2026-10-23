@@ -845,7 +845,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v21';
+var BUILD = 'v22';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -2722,7 +2722,7 @@ function openGarage(){
       g.clearRect(0,0,pv.width,pv.height);
       g.fillStyle='rgba(255,255,255,.05)'; g.fillRect(0,0,pv.width,pv.height);
       g.save(); g.translate(pv.width/2, pv.height/2);
-      drawCar(g, {x:0,y:0,r:26,ang:0,spd:0}, 0, S.car);
+      drawCar(g, {x:0,y:0,r:34,ang:0,spd:0}, 0, S.car);
       g.restore();
     }catch(e){}
     pvName.textContent=c.em+' '+c.name;
@@ -2750,107 +2750,373 @@ function openGarage(){
 }
 
 /* 赛车矢量绘制：车头朝 +X，实际朝向由 b.ang 决定（drawCar 内部旋转）。
-   纯 Path / 矩形绘制，不依赖任何图片资源，因此不增加首屏体积。 */
+   纯 Path 自绘，不依赖图片资源，首屏体积不变。
+
+   v22：从「圆角矩形 + 一块玻璃」升级成俯视车模。前后试了 6 版，最终按真实俯视比例定下来：
+   ① 轮廓 = 平车头 + 平车尾 + 很短的圆角（rc≈0.16 车宽）+ 四角微鼓的翼子板。
+      前几版圆角给到 0.3 车宽、腰线收到 0.86，手机上看着像子弹 / 香皂，全部推翻；
+   ② 轮胎按真实比例（轮径≈0.30W、胎宽≈0.13W），轮心推到车身边沿，
+      配合车身内的轮拱凹槽，俯视下能读出「四个轮子」；
+   ③ 深色玻璃：风挡 / 侧窗都压到比车顶暗，车顶才是车身色 —— 之前玻璃画浅了，整辆车像塑料玩具；
+   ④ 引擎盖轮廓线、前保险杠分缝、格栅、大灯（带晕）、尾灯、牌照、后视镜；
+   ⑤ 每种车型只调比例与特征件（尾翼、货厢、云梯、顶灯、铲斗…）。
+
+   ⚠ 仍然只画车型类别，不使用任何汽车品牌商标 / Logo / 名称。 */
+
+/* #rrggbb × 系数 → rgb() */
+function carShade(hex,k){
+  var n=parseInt(String(hex).replace('#',''),16);
+  var r=(n>>16)&255, gg=(n>>8)&255, b=n&255;
+  function f(v){ return Math.max(0,Math.min(255,Math.round(v*k))); }
+  return 'rgb('+f(r)+','+f(gg)+','+f(b)+')';
+}
+
+/* 俯视车身轮廓：平头 / 平尾 + 短圆角 + 翼子板微鼓 */
+function carPath(g,L,W,gm){
+  var hl=L/2, hw=W/2;
+  var nw=hw*(gm.nose||0.96), ww=hw*(gm.waist||0.99), tw=hw*(gm.tail||0.96);
+  var rc=Math.min(hl,hw)*(gm.rc||0.22);
+  var nf=nw*(gm.flat||0.80), tf=tw*(gm.flat||0.80);
+  g.beginPath();
+  g.moveTo(hl, nf);
+  g.lineTo(hl, -nf);                                                   // 车头平边
+  g.quadraticCurveTo(hl, -nw, hl-rc, -nw);                             // 右前圆角（很短）
+  g.lineTo(hl*0.60, -hw*0.998);                                        // 前翼子板
+  g.quadraticCurveTo(hl*0.18, -ww, -hl*0.18, -ww);                     // 腰线
+  g.quadraticCurveTo(-hl*0.62, -hw*0.998, -hl+rc, -tw);                // 后翼子板
+  g.quadraticCurveTo(-hl, -tw, -hl, -tf);                              // 左后圆角
+  g.lineTo(-hl, tf);                                                   // 车尾平边
+  g.quadraticCurveTo(-hl, tw, -hl+rc, tw);
+  g.quadraticCurveTo(-hl*0.62, hw*0.998, -hl*0.18, ww);
+  g.quadraticCurveTo(hl*0.18, ww, hl*0.60, hw*0.998);
+  g.lineTo(hl-rc, nw);
+  g.quadraticCurveTo(hl, nw, hl, nf);
+  g.closePath();
+}
+
+/* 车轮：细长轮胎 + 轮毂（俯视只有外侧一截露在车身外） */
+function carWheel(g,x,y,rr,wt){
+  g.fillStyle='#0b0d12';
+  roundRect(g,x-rr,y-wt,rr*2,wt*2,wt*0.80); g.fill();
+  g.fillStyle='rgba(255,255,255,.07)';
+  roundRect(g,x-rr*0.80,y-wt*0.94,rr*1.60,wt*0.34,wt*0.18); g.fill();
+  var hx=rr*0.56, hy=wt*0.76;
+  g.fillStyle='#646c7e'; g.beginPath(); g.ellipse(x,y,hx,hy,0,0,6.283); g.fill();
+  g.fillStyle='#b9c1d0'; g.beginPath(); g.ellipse(x,y,hx*0.62,hy*0.56,0,0,6.283); g.fill();
+  g.fillStyle='#3f4657'; g.beginPath(); g.ellipse(x,y,hx*0.24,hy*0.20,0,0,6.283); g.fill();
+}
+
+/* 各车型俯视比例 */
+var CAR_GEO={
+  sedan:  {len:1.00, wid:0.455, nose:0.96, waist:0.99, tail:0.96, flat:0.86, rc:0.22, cabF:0.12, cabB:-0.29, roofW:0.68, wr:0.158, wt:0.070, ay:1.03, axF:0.30, axB:0.30},
+  suv:    {len:1.03, wid:0.485, nose:0.97, waist:0.99, tail:0.97, flat:0.88, rc:0.24, cabF:0.17, cabB:-0.34, roofW:0.74, wr:0.160, wt:0.074, ay:1.03, axF:0.31, axB:0.31},
+  racer:  {len:0.96, wid:0.525, nose:0.90, waist:0.94, tail:0.94, flat:0.72, rc:0.11, cabF:-0.04, cabB:-0.26, roofW:0.52, wr:0.170, wt:0.078, ay:1.03, axF:0.34, axB:0.33},
+  bus:    {len:1.20, wid:0.425, nose:0.98, waist:1.00, tail:0.98, flat:0.94, rc:0.20, cabF:0.44, cabB:-0.46, roofW:0.70, wr:0.130, wt:0.058, ay:1.02, axF:0.36, axB:0.36},
+  truck:  {len:1.16, wid:0.450, nose:0.97, waist:0.99, tail:0.97, flat:0.90, rc:0.22, cabF:0.40, cabB:0.06, roofW:0.70, wr:0.150, wt:0.068, ay:1.02, axF:0.36, axB:0.32},
+  fire:   {len:1.10, wid:0.460, nose:0.97, waist:0.99, tail:0.97, flat:0.90, rc:0.22, cabF:0.38, cabB:0.04, roofW:0.70, wr:0.155, wt:0.070, ay:1.02, axF:0.36, axB:0.32},
+  ambul:  {len:1.06, wid:0.460, nose:0.97, waist:0.99, tail:0.97, flat:0.90, rc:0.24, cabF:0.34, cabB:-0.12, roofW:0.76, wr:0.140, wt:0.064, ay:1.02, axF:0.33, axB:0.33},
+  police: {len:1.00, wid:0.455, nose:0.96, waist:0.99, tail:0.96, flat:0.86, rc:0.22, cabF:0.12, cabB:-0.29, roofW:0.68, wr:0.150, wt:0.068, ay:1.03, axF:0.30, axB:0.30},
+  works:  {len:0.98, wid:0.520, nose:0.94, waist:0.97, tail:0.95, flat:0.86, rc:0.22, cabF:0.08, cabB:-0.22, roofW:0.62, wr:0.180, wt:0.088, ay:1.02, axF:0.34, axB:0.28},
+  taxi:   {len:1.00, wid:0.455, nose:0.96, waist:0.99, tail:0.96, flat:0.86, rc:0.22, cabF:0.12, cabB:-0.29, roofW:0.68, wr:0.158, wt:0.070, ay:1.03, axF:0.30, axB:0.30}
+};
+
 function drawCar(g,b,dt,id){
-  var c=carOf(id||S.car);
-  var L=b.r*2.60, Hh=b.r*1.28;   // 俯视视角的车身：长 ≈ 2.6r、宽 ≈ 1.28r（手机上约 100×50px，够看清）
+  var c=carOf(id||S.car), kind=c.kind;
+  var gm=CAR_GEO[kind]||CAR_GEO.sedan;
+  var L=b.r*2.62*(gm.len||1), W=L*gm.wid, hl=L/2, hw=W/2;
   var ang=(b.ang===undefined)?0:b.ang;
-  var kind=c.kind;
+  var body=c.body, dark=c.dark;
+  /* 玻璃统一用深蓝灰（反射天空 / 路面），不再跟着车身配色走 ——
+     否则黄色巴士的玻璃压暗后变成一条棕黄带，看着像车身条纹而不是窗。 */
+  var glass='#3d5570';
+  var nw=hw*(gm.nose||0.96), tw2=hw*(gm.tail||0.96);
+
   g.save();
-  g.translate(b.x,b.y);          // 关键：drawBH 里赛车分支是在黑洞的 translate 之前调用的，这里必须自己平移到车的位置
-  // 地面投影（不跟着车转，看起来更稳）
-  g.fillStyle='rgba(0,0,0,.34)';
-  g.beginPath(); g.ellipse(0, Hh*0.52, L*0.40, Hh*0.24, 0, 0, 6.283); g.fill();
+  g.translate(b.x,b.y);
+  g.fillStyle='rgba(0,0,0,.30)';
+  g.beginPath(); g.ellipse(0, W*0.20, hl*1.00, hw*1.16, 0, 0, 6.283); g.fill();
   g.rotate(ang);
 
-  var tyre='#14161f';
-  function wheel(x,y,rw,rh){
-    g.fillStyle=tyre;
-    roundRect(g, x-rw, y-rh, rw*2, rh*2, Math.min(rw,rh)*0.55); g.fill();
-    g.fillStyle='rgba(255,255,255,.18)';
-    g.beginPath(); g.ellipse(x,y,rw*0.40,rh*0.40,0,0,6.283); g.fill();
-  }
-  var rw=Hh*0.30, rh=Hh*0.26, ax=L*0.27, ay=Hh*0.42;
-
-  if(kind==='bus'){
-    wheel(-ax,-ay,rw*0.95,rh); wheel(ax*0.75,-ay,rw*0.95,rh);
-    wheel(-ax, ay,rw*0.95,rh); wheel(ax*0.75, ay,rw*0.95,rh);
-    g.fillStyle=c.body; roundRect(g,-L*0.5,-Hh*0.52,L,Hh*1.04,Hh*0.22); g.fill();
-    g.fillStyle=c.dark; roundRect(g,-L*0.5,Hh*0.24,L,Hh*0.28,Hh*0.10); g.fill();
-    g.fillStyle=c.glass;
-    for(var i=0;i<4;i++){ roundRect(g,-L*0.42+i*L*0.22,-Hh*0.36,L*0.15,Hh*0.34,3); g.fill(); }
-    g.fillStyle='rgba(255,255,255,.85)'; roundRect(g,L*0.40,-Hh*0.10,L*0.07,Hh*0.20,2); g.fill();
-  }else if(kind==='truck' || kind==='fire'){
-    wheel(-ax*1.15,-ay,rw,rh); wheel(-ax*0.35,-ay,rw,rh); wheel(ax*0.92,-ay,rw*1.05,rh);
-    wheel(-ax*1.15, ay,rw,rh); wheel(-ax*0.35, ay,rw,rh); wheel(ax*0.92, ay,rw*1.05,rh);
-    // 货厢
-    g.fillStyle=c.dark; roundRect(g,-L*0.5,-Hh*0.50,L*0.58,Hh*1.00,Hh*0.12); g.fill();
-    // 驾驶室
-    g.fillStyle=c.body; roundRect(g,L*0.05,-Hh*0.46,L*0.45,Hh*0.92,Hh*0.16); g.fill();
-    g.fillStyle=c.glass; roundRect(g,L*0.16,-Hh*0.34,L*0.22,Hh*0.44,4); g.fill();
-    if(kind==='fire'){
-      g.strokeStyle='#d8dde6'; g.lineWidth=Math.max(2,Hh*0.10);
-      g.beginPath(); g.moveTo(-L*0.42,-Hh*0.30); g.lineTo(L*0.06,-Hh*0.52); g.stroke();
-      g.fillStyle='#ff3b30'; g.beginPath(); g.arc(L*0.20,-Hh*0.52,Hh*0.13,0,6.283); g.fill();
-    }
-  }else if(kind==='ambul'){
-    wheel(-ax,-ay,rw,rh); wheel(ax,-ay,rw,rh); wheel(-ax,ay,rw,rh); wheel(ax,ay,rw,rh);
-    g.fillStyle=c.body; roundRect(g,-L*0.5,-Hh*0.50,L,Hh*1.00,Hh*0.18); g.fill();
-    g.fillStyle=c.glass; roundRect(g,L*0.12,-Hh*0.32,L*0.24,Hh*0.40,4); g.fill();
-    g.fillStyle='#e03131';                       // 红十字（救护车的通用标识，非品牌）
-    g.fillRect(-L*0.10,-Hh*0.09,Hh*0.52,Hh*0.18); g.fillRect(-L*0.04,-Hh*0.20,Hh*0.18,Hh*0.44);
-    g.fillStyle='#3b8cff'; g.beginPath(); g.arc(-L*0.20,-Hh*0.52,Hh*0.12,0,6.283); g.fill();
-  }else if(kind==='works'){
-    wheel(-ax*0.75,-ay,rw*0.90,rh); wheel(-ax*0.75,ay,rw*0.90,rh);
-    wheel(ax*0.98,-ay,rw*1.35,rh*1.35); wheel(ax*0.98,ay,rw*1.35,rh*1.35);
-    g.fillStyle=c.body; roundRect(g,-L*0.5,-Hh*0.44,L*0.86,Hh*0.88,Hh*0.16); g.fill();
-    g.fillStyle=c.glass; roundRect(g,-L*0.14,-Hh*0.30,L*0.30,Hh*0.40,4); g.fill();
-    g.fillStyle=c.dark;                          // 前铲斗
-    roundRect(g,L*0.34,-Hh*0.36,L*0.18,Hh*0.72,4); g.fill();
+  /* ---------- 1. 车轮（先画，被车身压住内侧） ---------- */
+  var rr=W*(gm.wr||0.145), wt=W*(gm.wt||0.064);
+  var ay=hw*(gm.ay||1.03);
+  var axF=L*(gm.axF||0.30), axB=-L*(gm.axB||0.30);
+  if(kind==='works'){
+    carWheel(g,axB,-ay*0.97,rr*0.84,wt*0.86); carWheel(g,axB,ay*0.97,rr*0.84,wt*0.86);
+    carWheel(g,axF,-ay,rr*1.20,wt*1.14);      carWheel(g,axF,ay,rr*1.20,wt*1.14);
+  }else if(kind==='truck'||kind==='fire'){
+    carWheel(g,axB,-ay,rr,wt);              carWheel(g,axB,ay,rr,wt);
+    carWheel(g,axB+L*0.120,-ay,rr,wt);      carWheel(g,axB+L*0.120,ay,rr,wt);
+    carWheel(g,axF,-ay,rr*1.03,wt*1.03);    carWheel(g,axF,ay,rr*1.03,wt*1.03);
   }else{
-    // 轿车 / 越野 / 赛车 / 警车 / 出租车：共用轿车底型，再按车型加特征
-    var bh2 = (kind==='racer')? Hh*0.72 : ((kind==='suv')? Hh*1.05 : Hh*0.92);
-    wheel(-ax,-ay,rw,rh); wheel(ax,-ay,rw,rh); wheel(-ax,ay,rw,rh); wheel(ax,ay,rw,rh);
-    g.fillStyle=c.body; roundRect(g,-L*0.5,-bh2*0.5,L,bh2,Hh*0.26); g.fill();
-    // 车顶 + 风挡
-    g.fillStyle=c.dark; roundRect(g,-L*0.16,-bh2*0.52,L*0.46,bh2*0.42,Hh*0.16); g.fill();
-    g.fillStyle=c.glass; roundRect(g,-L*0.12,-bh2*0.46,L*0.38,bh2*0.34,4); g.fill();
-    if(kind==='suv'){                            // 行李架
-      g.strokeStyle=c.dark; g.lineWidth=Math.max(2,Hh*0.08);
-      g.beginPath(); g.moveTo(-L*0.10,-bh2*0.54); g.lineTo(L*0.22,-bh2*0.54); g.stroke();
+    carWheel(g,axB,-ay,rr,wt); carWheel(g,axB,ay,rr,wt);
+    carWheel(g,axF,-ay,rr,wt); carWheel(g,axF,ay,rr,wt);
+  }
+
+  /* ---------- 2. 车身外壳 ---------- */
+  carPath(g,L,W,gm);
+  var bg=g.createLinearGradient(0,-hw,0,hw);
+  bg.addColorStop(0,    carShade(body,1.06));
+  bg.addColorStop(0.30, carShade(body,1.01));
+  bg.addColorStop(0.62, body);
+  bg.addColorStop(0.92, carShade(body,0.94));
+  bg.addColorStop(1,    carShade(dark,1.05));
+  g.fillStyle=bg; g.fill();
+  g.strokeStyle=carShade(dark,0.68); g.lineWidth=Math.max(1.1,W*0.016); g.stroke();
+
+  /* ---------- 3. 车身内部（裁剪到轮廓内） ---------- */
+  g.save(); carPath(g,L,W,gm); g.clip();
+
+  /* 轮拱凹槽：四个暗坑，把轮子「装」进车身 */
+  var arches=[[axB,-1],[axB,1],[axF,-1],[axF,1]];
+  for(var ai=0;ai<arches.length;ai++){
+    var aax=arches[ai][0], asg=arches[ai][1];
+    var ag2=g.createRadialGradient(aax, asg*hw*0.96, wt*0.4, aax, asg*hw*0.96, rr*1.30);
+    ag2.addColorStop(0,'rgba(0,0,0,.34)');
+    ag2.addColorStop(0.55,'rgba(0,0,0,.15)');
+    ag2.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=ag2;
+    g.beginPath(); g.ellipse(aax, asg*hw*0.96, rr*1.16, wt*2.4, 0, 0, 6.283); g.fill();
+  }
+
+  /* 侧面暗带：车身上下边缘压暗 → 俯视看才有「车顶是弧面」的厚度 */
+  var sgT=g.createLinearGradient(0,-hw,0,-hw*0.74);
+  sgT.addColorStop(0,'rgba(0,0,0,.32)');
+  sgT.addColorStop(0.55,'rgba(0,0,0,.12)');
+  sgT.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=sgT; g.fillRect(-hl,-hw,L,hw*0.26);
+  var sgB=g.createLinearGradient(0,hw,0,hw*0.74);
+  sgB.addColorStop(0,'rgba(0,0,0,.32)');
+  sgB.addColorStop(0.55,'rgba(0,0,0,.12)');
+  sgB.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=sgB; g.fillRect(-hl,hw*0.74,L,hw*0.26);
+  /* 车头 / 车尾压暗（保险杠的厚度） */
+  var sgF=g.createLinearGradient(hl,0,hl*0.86,0);
+  sgF.addColorStop(0,'rgba(0,0,0,.22)');
+  sgF.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=sgF; g.fillRect(hl*0.86,-hw,L*0.14,W);
+  var sgR=g.createLinearGradient(-hl,0,-hl*0.88,0);
+  sgR.addColorStop(0,'rgba(0,0,0,.20)');
+  sgR.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=sgR; g.fillRect(-hl,-hw,L*0.12,W);
+
+  /* 腰线：一条细亮线贴着车身两侧，让侧面是弧面 */
+  g.strokeStyle='rgba(255,255,255,.13)'; g.lineWidth=Math.max(1,W*0.016);
+  g.beginPath(); g.moveTo(-hl*0.74,-hw*0.972); g.lineTo(hl*0.74,-hw*0.972); g.stroke();
+  g.beginPath(); g.moveTo(-hl*0.74, hw*0.972); g.lineTo(hl*0.74, hw*0.972); g.stroke();
+
+  var cabF=L*gm.cabF, cabB=L*gm.cabB;
+  var cabW=W*gm.roofW;
+
+  if(kind==='truck'||kind==='fire'){
+    g.fillStyle=carShade(body,0.86);
+    roundRect(g,-hl*0.94,-hw*0.94,L*0.510,W*0.94,W*0.07); g.fill();
+    g.strokeStyle='rgba(0,0,0,.28)'; g.lineWidth=Math.max(1,W*0.018); g.stroke();
+    for(var q=1;q<=3;q++){
+      var qx=-hl*0.94+L*0.510*(q/4);
+      g.strokeStyle='rgba(0,0,0,.16)'; g.lineWidth=Math.max(1,W*0.013);
+      g.beginPath(); g.moveTo(qx,-hw*0.91); g.lineTo(qx,hw*0.91); g.stroke();
     }
-    if(kind==='racer'){                          // 尾翼 + 前 splitter
-      g.fillStyle=c.dark;
-      roundRect(g,-L*0.52,-bh2*0.62,L*0.10,bh2*0.30,2); g.fill();
-      roundRect(g,L*0.40,bh2*0.30,L*0.12,bh2*0.16,2); g.fill();
+    if(kind==='fire'){
+      g.strokeStyle='#c9d1de'; g.lineWidth=Math.max(1.6,W*0.040);
+      g.beginPath(); g.moveTo(-hl*0.84,-hw*0.22); g.lineTo(hl*0.00,-hw*0.22); g.stroke();
+      g.beginPath(); g.moveTo(-hl*0.84, hw*0.22); g.lineTo(hl*0.00, hw*0.22); g.stroke();
+      g.strokeStyle='rgba(150,162,182,.92)'; g.lineWidth=Math.max(1,W*0.022);
+      for(var t2=0;t2<7;t2++){
+        var tx=-hl*0.80+L*0.132*t2;
+        g.beginPath(); g.moveTo(tx,-hw*0.22); g.lineTo(tx,hw*0.22); g.stroke();
+      }
     }
-    if(kind==='police'){                         // 顶灯（红蓝交替闪烁）
-      var ph=(S.ti*0 + (Date.now()%700<350))?0:1;
-      g.fillStyle=ph?'#3b8cff':'#ff3b30';
-      roundRect(g,-L*0.06,-bh2*0.66,L*0.20,bh2*0.16,3); g.fill();
+    g.fillStyle=carShade(body,1.04);
+    roundRect(g,cabB,-cabW/2,cabF-cabB,cabW,cabW*0.20); g.fill();
+    g.strokeStyle='rgba(0,0,0,.20)'; g.lineWidth=Math.max(1,W*0.012); g.stroke();
+    /* 驾驶室前风挡（深色） */
+    g.beginPath();
+    g.moveTo(cabF,-cabW*0.52); g.lineTo(cabF+L*0.055,-hw*0.80);
+    g.lineTo(cabF+L*0.055, hw*0.80); g.lineTo(cabF, cabW*0.52);
+    g.closePath(); g.fillStyle=carShade(glass,0.84); g.fill();
+    g.fillStyle=carShade(glass,0.58);
+    roundRect(g,cabB+L*0.02,-hw*0.92,cabF-cabB-L*0.09,W*0.24,2); g.fill();
+    roundRect(g,cabB+L*0.02, hw*0.68,cabF-cabB-L*0.09,W*0.24,2); g.fill();
+  }else if(kind==='works'){
+    g.fillStyle=carShade(body,0.84);
+    roundRect(g,-hl*0.95,-hw*0.93,L*0.54,W*0.93,W*0.07); g.fill();
+    g.strokeStyle='rgba(0,0,0,.26)'; g.lineWidth=Math.max(1,W*0.016); g.stroke();
+    g.fillStyle=carShade(body,1.04);
+    roundRect(g,cabB,-cabW/2,cabF-cabB,cabW,cabW*0.20); g.fill();
+    g.strokeStyle='rgba(0,0,0,.18)'; g.lineWidth=Math.max(1,W*0.012); g.stroke();
+    g.beginPath();
+    g.moveTo(cabF,-cabW*0.50); g.lineTo(cabF+L*0.045,-hw*0.78);
+    g.lineTo(cabF+L*0.045, hw*0.78); g.lineTo(cabF, cabW*0.50);
+    g.closePath(); g.fillStyle=carShade(glass,0.84); g.fill();
+    g.fillStyle=carShade(glass,0.58);
+    roundRect(g,cabB+L*0.015,-hw*0.90,cabF-cabB-L*0.07,W*0.22,2); g.fill();
+    roundRect(g,cabB+L*0.015, hw*0.68,cabF-cabB-L*0.07,W*0.22,2); g.fill();
+  }else{
+    /* 乘用车：车顶（车身色）→ 侧窗（深）→ 前后风挡（深）→ 引擎盖轮廓 */
+    g.fillStyle=body;
+    roundRect(g,cabB,-cabW/2,cabF-cabB,cabW,cabW*0.16); g.fill();
+    g.strokeStyle='rgba(0,0,0,.30)'; g.lineWidth=Math.max(1.6,W*0.024); g.stroke();
+    g.strokeStyle='rgba(255,255,255,.20)'; g.lineWidth=Math.max(1,W*0.008); g.stroke();
+
+    var swIn=cabW/2+W*0.004, swOut=hw*0.985;
+    if(swOut-swIn > W*0.012){
+      var segs=(kind==='bus')?3:((kind==='racer')?1:2);
+      var sx0=cabB+cabW*0.08, sx1=cabF-cabW*0.08, seg=(sx1-sx0)/segs;
+      g.fillStyle=carShade(glass,0.52);
+      for(var si=0;si<segs;si++){
+        roundRect(g,sx0+si*seg+seg*0.10,-swOut,seg*0.80,swOut-swIn,Math.min(W*0.012,(swOut-swIn)*0.30)); g.fill();
+        roundRect(g,sx0+si*seg+seg*0.10, swIn, seg*0.80,swOut-swIn,Math.min(W*0.012,(swOut-swIn)*0.30)); g.fill();
+      }
     }
-    if(kind==='taxi'){                           // 顶灯箱
-      g.fillStyle='#ffb703';
-      roundRect(g,-L*0.05,-bh2*0.64,L*0.17,bh2*0.16,3); g.fill();
+    /* 前风挡：前宽后窄，深色，带一道反光 */
+    g.beginPath();
+    g.moveTo(cabF, -cabW*0.52);
+    g.lineTo(cabF+L*0.088, -hw*0.92);
+    g.lineTo(cabF+L*0.088,  hw*0.92);
+    g.lineTo(cabF,  cabW*0.52);
+    g.closePath(); g.fillStyle=carShade(glass,0.84); g.fill();
+    g.save(); g.clip();
+    g.fillStyle='rgba(255,255,255,.16)';
+    g.beginPath(); g.moveTo(cabF+L*0.016,-hw); g.lineTo(cabF+L*0.040,-hw);
+    g.lineTo(cabF+L*0.008,hw); g.lineTo(cabF-L*0.016,hw); g.closePath(); g.fill();
+    g.restore();
+    /* 后风挡 */
+    g.beginPath();
+    g.moveTo(cabB, -cabW*0.52);
+    g.lineTo(cabB-L*0.070, -hw*0.86);
+    g.lineTo(cabB-L*0.070,  hw*0.86);
+    g.lineTo(cabB,  cabW*0.52);
+    g.closePath(); g.fillStyle=carShade(glass,0.70); g.fill();
+    /* 引擎盖轮廓：从车头两角收到 A 柱 */
+    g.strokeStyle='rgba(0,0,0,.15)'; g.lineWidth=Math.max(1,W*0.012);
+    g.beginPath(); g.moveTo(hl*0.94,-nw*0.80); g.lineTo(cabF+L*0.092,-hw*0.74); g.stroke();
+    g.beginPath(); g.moveTo(hl*0.94, nw*0.80); g.lineTo(cabF+L*0.092, hw*0.74); g.stroke();
+    /* 引擎盖中线（两条对称细线，车头才有「盖板」的层次） */
+    g.strokeStyle='rgba(255,255,255,.10)'; g.lineWidth=Math.max(1,W*0.022);
+    g.beginPath(); g.moveTo(hl*0.93,-hw*0.16); g.lineTo(cabF+L*0.10,-hw*0.14); g.stroke();
+    g.beginPath(); g.moveTo(hl*0.93, hw*0.16); g.lineTo(cabF+L*0.10, hw*0.14); g.stroke();
+    /* 后备箱分缝 + 两条边线（和车头对称） */
+    g.strokeStyle='rgba(0,0,0,.15)'; g.lineWidth=Math.max(1,W*0.012);
+    g.beginPath(); g.moveTo(-hl*0.62,-hw*0.74); g.lineTo(-hl*0.62,hw*0.74); g.stroke();
+    g.beginPath(); g.moveTo(-hl*0.93,-tw2*0.80); g.lineTo(-hl*0.62,-hw*0.72); g.stroke();
+    g.beginPath(); g.moveTo(-hl*0.93, tw2*0.80); g.lineTo(-hl*0.62, hw*0.72); g.stroke();
+  }
+  /* 车漆扫光：一条斜向高光穿过车身（压在车厢之上），压掉「纯色块」的塑料感 */
+  var sweep=g.createLinearGradient(-hl,-hw*0.9,hl,hw*0.9);
+  sweep.addColorStop(0,'rgba(255,255,255,0)');
+  sweep.addColorStop(0.38,'rgba(255,255,255,.07)');
+  sweep.addColorStop(0.50,'rgba(255,255,255,.17)');
+  sweep.addColorStop(0.62,'rgba(255,255,255,.05)');
+  sweep.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=sweep; g.fillRect(-hl,-hw,L,W);
+
+  g.restore();   /* 结束裁剪 */
+
+  /* ---------- 4. 车头 / 车尾灯具 ---------- */
+  if(kind!=='works'){
+    g.fillStyle='#242936';                               // 格栅（深色 + 两条银色横条）
+    roundRect(g,hl-W*0.072,-hw*0.30,W*0.034,hw*0.60,W*0.008); g.fill();
+    g.strokeStyle='rgba(206,216,232,.55)'; g.lineWidth=Math.max(1,W*0.010);
+    g.beginPath(); g.moveTo(hl-W*0.068,-hw*0.11); g.lineTo(hl-W*0.044,-hw*0.11); g.stroke();
+    g.beginPath(); g.moveTo(hl-W*0.068, hw*0.11); g.lineTo(hl-W*0.044, hw*0.11); g.stroke();
+    g.fillStyle='rgba(255,249,220,.97)';                 // 大灯（横向细条，贴着车头）
+    roundRect(g,hl-W*0.030,-hw*0.70,W*0.024,W*0.16,W*0.010); g.fill();
+    roundRect(g,hl-W*0.030, hw*0.54,W*0.024,W*0.16,W*0.010); g.fill();
+    g.fillStyle='rgba(255,244,170,.15)';
+    g.beginPath(); g.ellipse(hl-W*0.004,-hw*0.62,W*0.070,W*0.050,0,0,6.283); g.fill();
+    g.beginPath(); g.ellipse(hl-W*0.004, hw*0.62,W*0.070,W*0.050,0,0,6.283); g.fill();
+    g.fillStyle='rgba(255,74,66,.95)';                   // 尾灯
+    roundRect(g,-hl+W*0.004,-hw*0.74,W*0.024,hw*0.30,W*0.008); g.fill();
+    roundRect(g,-hl+W*0.004, hw*0.44,W*0.024,hw*0.30,W*0.008); g.fill();
+    g.fillStyle='rgba(240,245,252,.88)';                 // 后牌照
+    roundRect(g,-hl+W*0.004,-hw*0.15,W*0.016,hw*0.30,W*0.005); g.fill();
+    g.fillStyle='rgba(246,250,255,.90)';                 // 前牌照
+    roundRect(g,hl-W*0.018,-hw*0.14,W*0.014,hw*0.28,W*0.004); g.fill();
+  }
+
+  /* ---------- 5. 后视镜 ---------- */
+  if(kind!=='works' && kind!=='bus'){
+    var my=cabF-L*0.012, mw=W*0.040, mh=W*0.082;
+    g.fillStyle=carShade(dark,0.86);
+    roundRect(g,my,-hw*1.01,mw,mh,mh*0.40); g.fill();
+    roundRect(g,my, hw*1.01-mh,mw,mh,mh*0.40); g.fill();
+  }
+
+  /* ---------- 6. 车型特征件 ---------- */
+  if(kind==='racer'){
+    g.fillStyle=carShade(dark,0.74);
+    roundRect(g,-hl*0.985,-hw*1.02,W*0.052,hw*2.04,W*0.014); g.fill();
+    g.fillStyle=carShade(dark,0.48);
+    roundRect(g,-hl*0.87,-hw*0.24,W*0.068,hw*0.48,W*0.008); g.fill();
+    g.fillStyle=carShade(body,1.14);
+    roundRect(g,hl*0.972,-hw*0.96,W*0.034,hw*1.92,W*0.012); g.fill();
+  }
+  if(kind==='suv'){
+    g.strokeStyle=carShade(dark,0.76); g.lineWidth=Math.max(1.6,W*0.032);
+    g.beginPath(); g.moveTo(cabB+cabW*0.18,-cabW*0.32); g.lineTo(cabF-cabW*0.18,-cabW*0.32); g.stroke();
+    g.beginPath(); g.moveTo(cabB+cabW*0.18, cabW*0.32); g.lineTo(cabF-cabW*0.18, cabW*0.32); g.stroke();
+  }
+  if(kind==='bus'){
+    g.fillStyle='rgba(255,255,255,.94)';
+    roundRect(g,hl-L*0.036,-hw*0.26,L*0.020,hw*0.52,2); g.fill();
+    g.fillStyle=carShade(dark,0.82);
+    roundRect(g,hl-L*0.155,-hw*0.94,L*0.070,W*0.28,W*0.006); g.fill();
+  }
+  if(kind==='ambul'){
+    g.fillStyle='#e03131';
+    g.fillRect(-hl*0.46-W*0.090,-hw*0.080,W*0.36,hw*0.16);
+    g.fillRect(-hl*0.46-W*0.030,-hw*0.28,W*0.12,hw*0.56);
+    g.fillStyle='#3b8cff';
+    roundRect(g,cabF-cabW*0.34,-cabW*0.20,cabW*0.42,cabW*0.40,cabW*0.10); g.fill();
+    g.strokeStyle='rgba(0,0,0,.22)'; g.lineWidth=Math.max(1,W*0.008); g.stroke();
+  }
+  if(kind==='police'){
+    var ph=(Date.now()%760<380);
+    g.fillStyle='rgba(18,22,32,.60)';
+    roundRect(g,cabB+cabW*0.16,-cabW*0.34,cabW*0.64,cabW*0.68,cabW*0.14); g.fill();
+    g.fillStyle=ph?'#ff3b30':'#2f6bff';
+    roundRect(g,cabB+cabW*0.21,-cabW*0.28,cabW*0.25,cabW*0.56,3); g.fill();
+    g.fillStyle=ph?'#2f6bff':'#ff3b30';
+    roundRect(g,cabB+cabW*0.50,-cabW*0.28,cabW*0.25,cabW*0.56,3); g.fill();
+    g.fillStyle='rgba(238,243,252,.88)';
+    roundRect(g,cabB-L*0.020,-hw*0.96,L*0.044,hw*0.18,2); g.fill();
+    roundRect(g,cabB-L*0.020, hw*0.78,L*0.044,hw*0.18,2); g.fill();
+  }
+  if(kind==='taxi'){
+    g.fillStyle='#fff6d2';
+    roundRect(g,cabB+cabW*0.26,-cabW*0.32,cabW*0.40,cabW*0.64,cabW*0.12); g.fill();
+    g.strokeStyle='rgba(122,88,0,.70)'; g.lineWidth=Math.max(1,W*0.011); g.stroke();
+    g.fillStyle='rgba(22,24,32,.88)';
+    for(var bz=0;bz<4;bz++){
+      roundRect(g,cabB+L*0.04+bz*L*0.064,-hw*0.975,L*0.022,hw*0.070,1); g.fill();
+      roundRect(g,cabB+L*0.04+bz*L*0.064, hw*0.905,L*0.022,hw*0.070,1); g.fill();
     }
   }
-  // 前后灯
-  g.fillStyle='rgba(255,240,180,.95)';
-  g.beginPath(); g.ellipse(L*0.46,-Hh*0.22,Hh*0.09,Hh*0.07,0,0,6.283); g.fill();
-  g.beginPath(); g.ellipse(L*0.46, Hh*0.22,Hh*0.09,Hh*0.07,0,0,6.283); g.fill();
-  g.fillStyle='rgba(255,90,80,.9)';
-  g.beginPath(); g.ellipse(-L*0.46,-Hh*0.22,Hh*0.07,Hh*0.06,0,0,6.283); g.fill();
-  g.beginPath(); g.ellipse(-L*0.46, Hh*0.22,Hh*0.07,Hh*0.06,0,0,6.283); g.fill();
+  if(kind==='works'){
+    g.fillStyle='#66707f';
+    roundRect(g,hl*0.93,-hw*0.84,W*0.070,W*0.18,W*0.014); g.fill();
+    roundRect(g,hl*0.93, hw*0.66,W*0.070,W*0.18,W*0.014); g.fill();
+    g.beginPath();
+    g.moveTo(hl*1.00,-hw*0.92); g.lineTo(hl*1.15,-hw*1.04);
+    g.lineTo(hl*1.19, hw*1.04); g.lineTo(hl*1.00, hw*0.92);
+    g.closePath(); g.fill();
+    g.strokeStyle='rgba(0,0,0,.34)'; g.lineWidth=Math.max(1,W*0.014); g.stroke();
+    g.fillStyle='#4a5260';                               // 斗齿
+    for(var tz=0;tz<4;tz++){
+      roundRect(g,hl*1.15,-hw*0.96+tz*hw*0.52,W*0.035,W*0.16,W*0.006); g.fill();
+    }
+  }
   g.restore();
 
-  // 速度线：开得快时车尾拉出气流
+  /* ---------- 7. 速度线 ---------- */
   var sp=b.spd||0;
   if(sp>140){
     g.save(); g.translate(b.x,b.y); g.rotate(ang);
-    g.strokeStyle='rgba(255,255,255,'+Math.min(0.35,(sp-140)/900)+')'; g.lineWidth=2;
+    g.strokeStyle='rgba(255,255,255,'+Math.min(0.32,(sp-140)/900)+')'; g.lineWidth=Math.max(1.4,W*0.014);
     for(var k=0;k<3;k++){
-      var ly=(-Hh*0.28)+k*Hh*0.28, ln=L*(0.30+Math.random()*0.30);
-      g.beginPath(); g.moveTo(-L*0.55,ly); g.lineTo(-L*0.55-ln,ly); g.stroke();
+      var ly=(-hw*0.55)+k*hw*0.55, ln=L*(0.28+Math.random()*0.28);
+      g.beginPath(); g.moveTo(-hl*1.02,ly); g.lineTo(-hl*1.02-ln,ly); g.stroke();
     }
     g.restore();
   }
@@ -3482,6 +3748,9 @@ function openSettings(){
     '<br><b>手机返回手势（v21）：</b>玩的时候从屏幕左边缘侧滑、或按安卓返回键，<b>不会直接退出游戏</b>了 —— '+
     '会先弹一句「要离开这一关吗？」，点「继续玩」接着玩、点「离开本关」回游戏首页（进度都存着）。'+
     '在关卡地图 / 设置 / 书写页里按返回，是<b>关闭当前弹窗</b>，跟手机 App 一样。'+
+    '<br><b>车型外观（v22）：</b>十种车全部重画 —— 方车头方车尾带圆角、车身有金属渐变和侧面暗边、'+
+    '引擎盖 / 车顶 / 前后风挡 / 侧窗分层、四个轮子带轮毂、还有格栅、大灯、尾灯、牌照、后视镜。'+
+    '仍是纯 Canvas 矢量自绘，<b>不增加任何图片资源</b>，也不使用汽车品牌商标。'+
     '<br><b>关于笔顺书写（v16）：</b>笔顺动画与描红由 <b>hanzi-writer</b>（MIT）驱动；'+
     '汉字笔顺数据来自 <b>Make Me A Hanzi</b> 项目，其字形取自 Arphic Technology（华康科技）1999 年'+
     '以宽松许可发布的字体，依 <b>Arphic Public License</b> 再发布（许可全文见随附 ARPHICPL.TXT）。'+
