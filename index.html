@@ -845,7 +845,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v22';
+var BUILD = 'v23';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -2709,7 +2709,7 @@ function openGarage(){
     '用真车标反而有商标风险。<br>点一辆车就能换，之后在关卡地图里随时可以再换。';
   sc.appendChild(tip);
   var pv=document.createElement('canvas'); pv.id='garagePreview';
-  pv.width=300; pv.height=130; pv.style.cssText='display:block;margin:10px auto 4px;width:100%;max-width:300px;height:130px';
+  pv.width=300; pv.height=148; pv.style.cssText='display:block;margin:10px auto 4px;width:100%;max-width:300px;height:148px';
   sc.appendChild(pv);
   var pvName=document.createElement('div'); pvName.id='garageName';
   pvName.style.cssText='text-align:center;font-size:15px;font-weight:700;margin-bottom:10px';
@@ -2722,7 +2722,9 @@ function openGarage(){
       g.clearRect(0,0,pv.width,pv.height);
       g.fillStyle='rgba(255,255,255,.05)'; g.fillRect(0,0,pv.width,pv.height);
       g.save(); g.translate(pv.width/2, pv.height/2);
-      drawCar(g, {x:0,y:0,r:34,ang:0,spd:0}, 0, S.car);
+      SHADOW_K=0.62;                   /* 预览画布小，影子收一点，免得被边缘硬切 */
+      try{ drawCar(g, {x:0,y:0,r:34,ang:0,spd:0}, 0, S.car); }
+      finally{ SHADOW_K=1; }
       g.restore();
     }catch(e){}
     pvName.textContent=c.em+' '+c.name;
@@ -2794,6 +2796,22 @@ function carPath(g,L,W,gm){
   g.closePath();
 }
 
+/* 一层地面投影。
+   要点：先按世界光方向平移，再按车身朝向旋转 → 落点方向不随车转、形状随车转。
+   blurPx>0 用 shadowBlur 做真模糊（半影），=0 则画锐利轮廓（本影，负责「贴住地面」的接触感）。 */
+function carShadowLayer(g,L,W,gm,ang,k,off,alpha,blurPx,shK){
+  var so=W*off*(shK||1);
+  var kk=1+(k-1)*(shK||1);
+  g.save();
+  g.translate(CAR_LIGHT.x*so, CAR_LIGHT.y*so);
+  g.rotate(ang);
+  g.fillStyle='rgba(0,0,0,'+alpha+')';
+  if(blurPx>0){ g.shadowColor='rgba(0,0,0,'+alpha+')'; g.shadowBlur=blurPx; }
+  carPath(g, L*kk, W*kk, gm);
+  g.fill();
+  g.restore();
+}
+
 /* 车轮：细长轮胎 + 轮毂（俯视只有外侧一截露在车身外） */
 function carWheel(g,x,y,rr,wt){
   g.fillStyle='#0b0d12';
@@ -2820,6 +2838,21 @@ var CAR_GEO={
   taxi:   {len:1.00, wid:0.455, nose:0.96, waist:0.99, tail:0.96, flat:0.86, rc:0.22, cabF:0.12, cabB:-0.29, roofW:0.68, wr:0.158, wt:0.070, ay:1.03, axF:0.30, axB:0.30}
 };
 
+/* 地面投影参数（真实感的重量主要来自影子，不是车身上的细节：
+   小尺寸下多画一个灯只会变糊，但影子少一层就会让车看起来像浮着）。
+   两层结构 —— 半影（shadowBlur 模糊外扩）+ 本影（锐利、贴合、偏移小）。
+   手叠 4 个纯色轮廓会在层与层之间留下肉眼可见的台阶，反而不如一次真模糊。 */
+var CAR_SHADOW={ softK:1.08, softOff:0.28, softA:0.20, blur:0.19,
+                 coreK:0.95, coreOff:0.24, coreA:0.32 };
+/* 世界光方向（单位向量，指向背光侧 = 影子落下的方向）。
+   ⚠ 这个方向必须和车身渐变「暗面」朝的方向一致，否则会出现
+   「亮面旁边紧贴一条影子」的别扭感。车身渐变写的是局部 -y 亮、+y 暗，
+   游戏里车头朝上（ang=-90°）时局部 +y 落在屏幕右侧 ⇒ 暗面在右 ⇒ 影子必须落右下。
+   ang 在 -90°~0° 之间转时，局部 +y 大致扫过「右→下」，与 (0.92,0.40) 基本同步，全程自洽。 */
+var CAR_LIGHT={x:0.92, y:0.40};
+/* 影子整体缩放：车库预览的画布小，调小一点免得影子被画布边缘硬切 */
+var SHADOW_K=1;
+
 function drawCar(g,b,dt,id){
   var c=carOf(id||S.car), kind=c.kind;
   var gm=CAR_GEO[kind]||CAR_GEO.sedan;
@@ -2833,8 +2866,16 @@ function drawCar(g,b,dt,id){
 
   g.save();
   g.translate(b.x,b.y);
-  g.fillStyle='rgba(0,0,0,.30)';
-  g.beginPath(); g.ellipse(0, W*0.20, hl*1.00, hw*1.16, 0, 0, 6.283); g.fill();
+  /* ---------- 0. 地面投影（半影 + 本影） ----------
+     原先是一个偏移 W*0.20 的椭圆，画在 rotate 之前，两个毛病：
+       ① 椭圆比车身还窄一圈，几乎全被车压住 —— 实尺寸下等于没有影子，车就「浮」着；
+       ② 车横向行驶时影子还是竖椭圆，形状跟车完全对不上。
+     现在：路径跟着**车身朝向**走（平行光下影子就是轮廓沿光方向平移），
+     偏移方向锁在**世界坐标**（先 translate 再 rotate），所以车怎么转，
+     落点方向都不变、形状始终贴合车形。 */
+  carShadowLayer(g,L,W,gm,ang,CAR_SHADOW.softK,CAR_SHADOW.softOff,CAR_SHADOW.softA,
+                 Math.max(3,W*CAR_SHADOW.blur),SHADOW_K);
+  carShadowLayer(g,L,W,gm,ang,CAR_SHADOW.coreK,CAR_SHADOW.coreOff,CAR_SHADOW.coreA,0,SHADOW_K);
   g.rotate(ang);
 
   /* ---------- 1. 车轮（先画，被车身压住内侧） ---------- */
@@ -2853,9 +2894,16 @@ function drawCar(g,b,dt,id){
     carWheel(g,axF,-ay,rr,wt); carWheel(g,axF,ay,rr,wt);
   }
 
-  /* ---------- 2. 车身外壳 ---------- */
+  /* ---------- 2. 车身外壳 ----------
+     明暗方向必须锁在**世界坐标**：车转多少度，就在局部坐标里把光反向转多少度。
+     之前渐变固定写 (0,-hw)→(0,hw)，亮面会跟着车一起转 —— 影子固定、亮面乱跑，
+     车一掉头就变成「亮面与影子叠在同一侧」，一眼就假。 */
   carPath(g,L,W,gm);
-  var bg=g.createLinearGradient(0,-hw,0,hw);
+  var _ca=Math.cos(-ang), _sa=Math.sin(-ang);
+  var _dx=CAR_LIGHT.x*_ca-CAR_LIGHT.y*_sa;      /* 背光方向 → 局部坐标 */
+  var _dy=CAR_LIGHT.x*_sa+CAR_LIGHT.y*_ca;
+  var _rg=Math.abs(hl*_dx)+Math.abs(hw*_dy)||hw; /* 车身沿光方向的半跨度 */
+  var bg=g.createLinearGradient(-_dx*_rg,-_dy*_rg, _dx*_rg,_dy*_rg);
   bg.addColorStop(0,    carShade(body,1.06));
   bg.addColorStop(0.30, carShade(body,1.01));
   bg.addColorStop(0.62, body);
