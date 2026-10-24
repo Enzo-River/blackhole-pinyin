@@ -845,7 +845,7 @@ function diffDesc(d){ return diffStar(d)+' '+(d===1?'启蒙':(d===2?'巩固':'�
 
 /* 版本号：每次发布改一次。音频文件带 ?v= 防止被浏览器 / 中间层缓存成旧发音包，
     「复制最新版链接」也用同一个号，别人点开一定是当次发布的内容。 */
-var BUILD = 'v23';
+var BUILD = 'v24';
 /* 是否在微信内置浏览器（X5 / WKWebView）。微信 WebView 不支持文件下载，
    一旦触发 <a download> 就会弹「请在外部浏览器打开」。这里统一判一下，
    导出进度时改走「长按复制文本」，避免那条提示。 */
@@ -2812,16 +2812,49 @@ function carShadowLayer(g,L,W,gm,ang,k,off,alpha,blurPx,shK){
   g.restore();
 }
 
-/* 车轮：细长轮胎 + 轮毂（俯视只有外侧一截露在车身外） */
-function carWheel(g,x,y,rr,wt){
+/* 车轮：细长轮胎 + 轮毂（俯视只有外侧一截露在车身外）
+   ph    滚动相位 0..1（由里程折算成圈数，取小数部分）
+   steer 前轮转向角（弧度），后轮传 0
+   lod   0 只画纯色胎块 + 轮毂盖；≥1 轮毂里加随相位平移的暗槽（表示在滚） */
+function carWheel(g,x,y,rr,wt,ph,steer,lod){
+  ph=ph||0; steer=steer||0; if(lod===undefined) lod=1;
+  if(steer){ g.save(); g.translate(x,y); g.rotate(steer); x=0; y=0; }
+
+  /* 轮胎 */
   g.fillStyle='#0b0d12';
   roundRect(g,x-rr,y-wt,rr*2,wt*2,wt*0.80); g.fill();
+  /* 胎肩反光 */
   g.fillStyle='rgba(255,255,255,.07)';
   roundRect(g,x-rr*0.80,y-wt*0.94,rr*1.60,wt*0.34,wt*0.18); g.fill();
+
+  /* 轮毂 */
   var hx=rr*0.56, hy=wt*0.76;
   g.fillStyle='#646c7e'; g.beginPath(); g.ellipse(x,y,hx,hy,0,0,6.283); g.fill();
   g.fillStyle='#b9c1d0'; g.beginPath(); g.ellipse(x,y,hx*0.62,hy*0.56,0,0,6.283); g.fill();
-  g.fillStyle='#3f4657'; g.beginPath(); g.ellipse(x,y,hx*0.24,hy*0.20,0,0,6.283); g.fill();
+
+  if(lod>=1){
+    /* 「在滚」的信号只能用轮毂表达，不能用胎面花纹：
+       俯视下车身把轮胎盖掉一半，剩下的胎面在轮毂前后各只有 ~3px，花纹根本放不下 ——
+       第一版就是这么做的，实尺寸下 4 个轮子纹丝不动。
+       轮毂是浅银色、对比强、面积够，暗槽沿车身纵向平移，才是这个视角下读得出来的转动。 */
+    var hxp=Math.max(2.0,hx*0.72);          /* 暗槽间距 */
+    var gw=Math.max(1.0,hx*0.30);           /* 暗槽宽度 */
+    var off=ph*hxp;
+    g.save(); g.beginPath(); g.ellipse(x,y,hx*0.62,hy*0.56,0,0,6.283); g.clip();
+    /* 颜色必须够深：第一版用 rgba(30,36,48,.62)，叠在浅银轮毂上得到亮度 97，
+       而外圈是 108 —— 两者几乎同色，实尺寸下 10 个像素在变但眼睛看不见。
+       现在压到亮度 ~50，才有「银轮毂上几道黑缝」的对比。 */
+    g.fillStyle='rgba(12,15,22,.80)';
+    for(var gi=-2;gi<=2;gi++){
+      g.fillRect(x+gi*hxp-off-gw/2, y-hy, gw, hy*2);
+    }
+    g.restore();
+  }else{
+    g.fillStyle='#3f4657';
+    g.beginPath(); g.ellipse(x,y,hx*0.24,hy*0.20,0,0,6.283); g.fill();
+  }
+
+  if(steer) g.restore();
 }
 
 /* 各车型俯视比例 */
@@ -2853,11 +2886,49 @@ var CAR_LIGHT={x:0.92, y:0.40};
 /* 影子整体缩放：车库预览的画布小，调小一点免得影子被画布边缘硬切 */
 var SHADOW_K=1;
 
+/* ---------- 尺寸分级（C）
+   为什么要分级：游戏里车宽只有 ~45px，格栅银条 0.45px、牌照 0.7px、轮毂辐条 1px ——
+   这些在手机上画出来不是「细节」而是噪点；一堆 1px 的线挤在 45px 宽的车身上，整体只会显脏。
+   反过来在大屏 / 放大查看时，同一套代码应该给出更多层次。
+   按**车长像素**分三级（L 直接对应玩家感知的整体大小，各车型 wid 不同，用车宽会串档）：
+     LOD 0  L < 70    只留剪影：车身 / 轮子 / 车顶 / 风挡 / 侧窗 / 灯 / 车型特征件
+     LOD 1  70–140    完整细节（游戏内 r=38 → L≈100 走这一档；车库 r=34 → L≈89 也在这档）
+     LOD 2  L ≥ 140   追加：格栅多横条、牌照描边、轮毂辐条、玻璃二次反光
+   注意：车型特征件（尾翼 / 云梯 / 灯条 / 铲斗 / 顶灯箱）任何 LOD 都画 —— 那是辨识度的来源，
+   砍掉就分不出是消防车还是卡车了。能砍的只有「纯装饰性小件」。 */
+function carLOD(L){ return L<70?0:(L<140?1:2); }
+
+/* 轮子滚动：满速时每秒转几圈（纯观感参数，不是物理量）。
+   物理上 560px/s 的车配 7px 半径的轮子要转 12 圈/秒，花纹根本来不及看，
+   屏幕上只会变成一片闪动的噪点（时间混叠）。这里降到 4.2 圈/秒 ——
+   慢到眼睛能读出「在滚」，又不至于拖成一片。 */
+var WHEEL_TPM=4.2;
+
 function drawCar(g,b,dt,id){
   var c=carOf(id||S.car), kind=c.kind;
   var gm=CAR_GEO[kind]||CAR_GEO.sedan;
   var L=b.r*2.62*(gm.len||1), W=L*gm.wid, hl=L/2, hw=W/2;
   var ang=(b.ang===undefined)?0:b.ang;
+
+  /* ---------- B+C：尺寸分级 / 轮子滚动 / 前轮视觉转向 ---------- */
+  var lod=carLOD(L);
+  /* 滚动相位：按「满速 4.2 圈/秒」折算后取小数部分，驱动胎面花纹平移。
+     与车的大小无关 —— 轮子大小只该改变花纹间距，不该改变转速。 */
+  if(dt>0) b._roll=((b._roll||0)+(Math.abs(b.spd||0)/560)*WHEEL_TPM*dt)%1;
+  var rollPh=b._roll||0;
+  /* 前轮转向：手动按方向键时直接读 S.steer；自动寻路时用上一帧的角速度换算。
+     存到 b._steer 做平滑，松手不会「啪」地弹正；dt=0（车库预览）时保持不变。 */
+  var stTgt=0;
+  if(S.steer) stTgt=S.steer*0.42;
+  else if(dt>0 && b._ang0!==undefined){
+    var dwA=ang-b._ang0;
+    while(dwA>Math.PI) dwA-=6.283185307;
+    while(dwA<-Math.PI) dwA+=6.283185307;
+    stTgt=Math.max(-0.42, Math.min(0.42, dwA/dt*0.34));
+  }
+  b._steer=(b._steer||0)+(stTgt-(b._steer||0))*Math.min(1,dt*9);
+  b._ang0=ang;
+
   var body=c.body, dark=c.dark;
   /* 玻璃统一用深蓝灰（反射天空 / 路面），不再跟着车身配色走 ——
      否则黄色巴士的玻璃压暗后变成一条棕黄带，看着像车身条纹而不是窗。 */
@@ -2882,16 +2953,17 @@ function drawCar(g,b,dt,id){
   var rr=W*(gm.wr||0.145), wt=W*(gm.wt||0.064);
   var ay=hw*(gm.ay||1.03);
   var axF=L*(gm.axF||0.30), axB=-L*(gm.axB||0.30);
+  var sw=b._steer||0;                     /* 前轮转向角，后轮恒为 0 */
   if(kind==='works'){
-    carWheel(g,axB,-ay*0.97,rr*0.84,wt*0.86); carWheel(g,axB,ay*0.97,rr*0.84,wt*0.86);
-    carWheel(g,axF,-ay,rr*1.20,wt*1.14);      carWheel(g,axF,ay,rr*1.20,wt*1.14);
+    carWheel(g,axB,-ay*0.97,rr*0.84,wt*0.86,rollPh,0,lod); carWheel(g,axB,ay*0.97,rr*0.84,wt*0.86,rollPh,0,lod);
+    carWheel(g,axF,-ay,rr*1.20,wt*1.14,rollPh,sw,lod);     carWheel(g,axF,ay,rr*1.20,wt*1.14,rollPh,sw,lod);
   }else if(kind==='truck'||kind==='fire'){
-    carWheel(g,axB,-ay,rr,wt);              carWheel(g,axB,ay,rr,wt);
-    carWheel(g,axB+L*0.120,-ay,rr,wt);      carWheel(g,axB+L*0.120,ay,rr,wt);
-    carWheel(g,axF,-ay,rr*1.03,wt*1.03);    carWheel(g,axF,ay,rr*1.03,wt*1.03);
+    carWheel(g,axB,-ay,rr,wt,rollPh,0,lod);             carWheel(g,axB,ay,rr,wt,rollPh,0,lod);
+    carWheel(g,axB+L*0.120,-ay,rr,wt,rollPh,0,lod);     carWheel(g,axB+L*0.120,ay,rr,wt,rollPh,0,lod);
+    carWheel(g,axF,-ay,rr*1.03,wt*1.03,rollPh,sw,lod);  carWheel(g,axF,ay,rr*1.03,wt*1.03,rollPh,sw,lod);
   }else{
-    carWheel(g,axB,-ay,rr,wt); carWheel(g,axB,ay,rr,wt);
-    carWheel(g,axF,-ay,rr,wt); carWheel(g,axF,ay,rr,wt);
+    carWheel(g,axB,-ay,rr,wt,rollPh,0,lod); carWheel(g,axB,ay,rr,wt,rollPh,0,lod);
+    carWheel(g,axF,-ay,rr,wt,rollPh,sw,lod); carWheel(g,axF,ay,rr,wt,rollPh,sw,lod);
   }
 
   /* ---------- 2. 车身外壳 ----------
@@ -2903,6 +2975,11 @@ function drawCar(g,b,dt,id){
   var _dx=CAR_LIGHT.x*_ca-CAR_LIGHT.y*_sa;      /* 背光方向 → 局部坐标 */
   var _dy=CAR_LIGHT.x*_sa+CAR_LIGHT.y*_ca;
   var _rg=Math.abs(hl*_dx)+Math.abs(hw*_dy)||hw; /* 车身沿光方向的半跨度 */
+  /* 玻璃受光（B）：所有窗共享同一个世界光系数 —— 车头朝光时整片玻璃反光变亮，
+     背光时沉下去。三处窗仍保留各自的基准亮度（前风挡 .84 > 后 .70 > 侧 .52），
+     只整体乘这个系数，所以「前风挡最亮」的层次不会丢。
+     纯色平涂的玻璃是「拼图感」的主要来源，这一层是把它变成玻璃的最低成本做法。 */
+  var glK=0.60+0.65*Math.max(0,Math.min(1,(1-_dx)/2));
   var bg=g.createLinearGradient(-_dx*_rg,-_dy*_rg, _dx*_rg,_dy*_rg);
   bg.addColorStop(0,    carShade(body,1.06));
   bg.addColorStop(0.30, carShade(body,1.01));
@@ -2915,16 +2992,19 @@ function drawCar(g,b,dt,id){
   /* ---------- 3. 车身内部（裁剪到轮廓内） ---------- */
   g.save(); carPath(g,L,W,gm); g.clip();
 
-  /* 轮拱凹槽：四个暗坑，把轮子「装」进车身 */
-  var arches=[[axB,-1],[axB,1],[axF,-1],[axF,1]];
-  for(var ai=0;ai<arches.length;ai++){
-    var aax=arches[ai][0], asg=arches[ai][1];
-    var ag2=g.createRadialGradient(aax, asg*hw*0.96, wt*0.4, aax, asg*hw*0.96, rr*1.30);
-    ag2.addColorStop(0,'rgba(0,0,0,.34)');
-    ag2.addColorStop(0.55,'rgba(0,0,0,.15)');
-    ag2.addColorStop(1,'rgba(0,0,0,0)');
-    g.fillStyle=ag2;
-    g.beginPath(); g.ellipse(aax, asg*hw*0.96, rr*1.16, wt*2.4, 0, 0, 6.283); g.fill();
+  /* 轮拱凹槽：四个暗坑，把轮子「装」进车身。
+     LOD 0 跳过 —— 那时轮子本身只有 5px，看得见的只有一团脏影，不如不画。 */
+  if(lod>=1){
+    var arches=[[axB,-1],[axB,1],[axF,-1],[axF,1]];
+    for(var ai=0;ai<arches.length;ai++){
+      var aax=arches[ai][0], asg=arches[ai][1];
+      var ag2=g.createRadialGradient(aax, asg*hw*0.96, wt*0.4, aax, asg*hw*0.96, rr*1.30);
+      ag2.addColorStop(0,'rgba(0,0,0,.34)');
+      ag2.addColorStop(0.55,'rgba(0,0,0,.15)');
+      ag2.addColorStop(1,'rgba(0,0,0,0)');
+      g.fillStyle=ag2;
+      g.beginPath(); g.ellipse(aax, asg*hw*0.96, rr*1.16, wt*2.4, 0, 0, 6.283); g.fill();
+    }
   }
 
   /* 侧面暗带：车身上下边缘压暗 → 俯视看才有「车顶是弧面」的厚度 */
@@ -2948,10 +3028,13 @@ function drawCar(g,b,dt,id){
   sgR.addColorStop(1,'rgba(0,0,0,0)');
   g.fillStyle=sgR; g.fillRect(-hl,-hw,L*0.12,W);
 
-  /* 腰线：一条细亮线贴着车身两侧，让侧面是弧面 */
-  g.strokeStyle='rgba(255,255,255,.13)'; g.lineWidth=Math.max(1,W*0.016);
-  g.beginPath(); g.moveTo(-hl*0.74,-hw*0.972); g.lineTo(hl*0.74,-hw*0.972); g.stroke();
-  g.beginPath(); g.moveTo(-hl*0.74, hw*0.972); g.lineTo(hl*0.74, hw*0.972); g.stroke();
+  /* 腰线：一条细亮线贴着车身两侧，让侧面是弧面。
+     LOD 0 时它离车身边沿不到半像素，画出来只是把轮廓加粗，所以跳过。 */
+  if(lod>=1){
+    g.strokeStyle='rgba(255,255,255,.13)'; g.lineWidth=Math.max(1,W*0.016);
+    g.beginPath(); g.moveTo(-hl*0.74,-hw*0.972); g.lineTo(hl*0.74,-hw*0.972); g.stroke();
+    g.beginPath(); g.moveTo(-hl*0.74, hw*0.972); g.lineTo(hl*0.74, hw*0.972); g.stroke();
+  }
 
   var cabF=L*gm.cabF, cabB=L*gm.cabB;
   var cabW=W*gm.roofW;
@@ -2982,8 +3065,8 @@ function drawCar(g,b,dt,id){
     g.beginPath();
     g.moveTo(cabF,-cabW*0.52); g.lineTo(cabF+L*0.055,-hw*0.80);
     g.lineTo(cabF+L*0.055, hw*0.80); g.lineTo(cabF, cabW*0.52);
-    g.closePath(); g.fillStyle=carShade(glass,0.84); g.fill();
-    g.fillStyle=carShade(glass,0.58);
+    g.closePath(); g.fillStyle=carShade(glass,0.84*glK); g.fill();
+    g.fillStyle=carShade(glass,0.58*glK);
     roundRect(g,cabB+L*0.02,-hw*0.92,cabF-cabB-L*0.09,W*0.24,2); g.fill();
     roundRect(g,cabB+L*0.02, hw*0.68,cabF-cabB-L*0.09,W*0.24,2); g.fill();
   }else if(kind==='works'){
@@ -2996,8 +3079,8 @@ function drawCar(g,b,dt,id){
     g.beginPath();
     g.moveTo(cabF,-cabW*0.50); g.lineTo(cabF+L*0.045,-hw*0.78);
     g.lineTo(cabF+L*0.045, hw*0.78); g.lineTo(cabF, cabW*0.50);
-    g.closePath(); g.fillStyle=carShade(glass,0.84); g.fill();
-    g.fillStyle=carShade(glass,0.58);
+    g.closePath(); g.fillStyle=carShade(glass,0.84*glK); g.fill();
+    g.fillStyle=carShade(glass,0.58*glK);
     roundRect(g,cabB+L*0.015,-hw*0.90,cabF-cabB-L*0.07,W*0.22,2); g.fill();
     roundRect(g,cabB+L*0.015, hw*0.68,cabF-cabB-L*0.07,W*0.22,2); g.fill();
   }else{
@@ -3005,29 +3088,56 @@ function drawCar(g,b,dt,id){
     g.fillStyle=body;
     roundRect(g,cabB,-cabW/2,cabF-cabB,cabW,cabW*0.16); g.fill();
     g.strokeStyle='rgba(0,0,0,.30)'; g.lineWidth=Math.max(1.6,W*0.024); g.stroke();
-    g.strokeStyle='rgba(255,255,255,.20)'; g.lineWidth=Math.max(1,W*0.008); g.stroke();
+    /* 内圈白线只在 LOD 2 画：45px 车身上它和外圈那条 1.6px 黑线一样粗（都被 max 兜成 1px），
+       叠上去只会让描边变浅，看不出「双层」的意思，纯属噪点。 */
+    if(lod>=2){ g.strokeStyle='rgba(255,255,255,.20)'; g.lineWidth=Math.max(1,W*0.008); g.stroke(); }
+
+    if(lod>=1){
+      /* 车顶受光（B）：沿世界光方向铺一层亮→暗，让「车顶是弧面」在迎光侧显形。
+         方向取自 _dx/_dy（背光方向），所以车一转，高光带就扫过车顶，而不是跟着车顶一起转。
+         峰值压到 .07：v22 用 carShade 提亮过一次、v24 初版用 .13 白提亮过一次，
+         两次结局一样 —— 车顶一旦比车身亮，就变成「车身上盖了块板」。 */
+      var cxc=(cabB+cabF)/2, hs=cabW*0.58;
+      g.save(); g.beginPath();
+      roundRect(g,cabB,-cabW/2,cabF-cabB,cabW,cabW*0.16); g.clip();
+      var rfg=g.createLinearGradient(cxc-_dx*hs,-_dy*hs, cxc+_dx*hs,_dy*hs);
+      rfg.addColorStop(0,   'rgba(255,255,255,.07)');
+      rfg.addColorStop(0.52,'rgba(255,255,255,.01)');
+      rfg.addColorStop(1,   'rgba(0,0,0,.05)');
+      g.fillStyle=rfg; g.fillRect(cabB-1,-cabW,cabF-cabB+2,cabW*2);
+      g.restore();
+    }
 
     var swIn=cabW/2+W*0.004, swOut=hw*0.985;
     if(swOut-swIn > W*0.012){
       var segs=(kind==='bus')?3:((kind==='racer')?1:2);
       var sx0=cabB+cabW*0.08, sx1=cabF-cabW*0.08, seg=(sx1-sx0)/segs;
-      g.fillStyle=carShade(glass,0.52);
+      g.fillStyle=carShade(glass,0.52*glK);
       for(var si=0;si<segs;si++){
         roundRect(g,sx0+si*seg+seg*0.10,-swOut,seg*0.80,swOut-swIn,Math.min(W*0.012,(swOut-swIn)*0.30)); g.fill();
         roundRect(g,sx0+si*seg+seg*0.10, swIn, seg*0.80,swOut-swIn,Math.min(W*0.012,(swOut-swIn)*0.30)); g.fill();
       }
     }
-    /* 前风挡：前宽后窄，深色，带一道反光 */
+    /* 前风挡：前宽后窄，深色，带一道反光。
+       反光强度跟着「车头是否朝着光源」走（_dx 是背光方向的 x 分量，取负即迎光程度），
+       车掉头时风挡会从亮转深 —— 真车就是这样，不会永远亮着。 */
     g.beginPath();
     g.moveTo(cabF, -cabW*0.52);
     g.lineTo(cabF+L*0.088, -hw*0.92);
     g.lineTo(cabF+L*0.088,  hw*0.92);
     g.lineTo(cabF,  cabW*0.52);
-    g.closePath(); g.fillStyle=carShade(glass,0.84); g.fill();
+    g.closePath(); g.fillStyle=carShade(glass,0.84*glK); g.fill();
     g.save(); g.clip();
-    g.fillStyle='rgba(255,255,255,.16)';
+    var glF=0.09+0.13*Math.max(0,Math.min(1,(1-_dx)/2));
+    g.fillStyle='rgba(255,255,255,'+glF.toFixed(3)+')';
     g.beginPath(); g.moveTo(cabF+L*0.016,-hw); g.lineTo(cabF+L*0.040,-hw);
     g.lineTo(cabF+L*0.008,hw); g.lineTo(cabF-L*0.016,hw); g.closePath(); g.fill();
+    if(lod>=2){
+      /* 第二道反光：玻璃上两条不同角度的高光，只有大尺寸才分辨得出来 */
+      g.fillStyle='rgba(255,255,255,'+(glF*0.50).toFixed(3)+')';
+      g.beginPath(); g.moveTo(cabF+L*0.052,-hw); g.lineTo(cabF+L*0.064,-hw);
+      g.lineTo(cabF+L*0.046,hw); g.lineTo(cabF+L*0.036,hw); g.closePath(); g.fill();
+    }
     g.restore();
     /* 后风挡 */
     g.beginPath();
@@ -3035,56 +3145,83 @@ function drawCar(g,b,dt,id){
     g.lineTo(cabB-L*0.070, -hw*0.86);
     g.lineTo(cabB-L*0.070,  hw*0.86);
     g.lineTo(cabB,  cabW*0.52);
-    g.closePath(); g.fillStyle=carShade(glass,0.70); g.fill();
-    /* 引擎盖轮廓：从车头两角收到 A 柱 */
-    g.strokeStyle='rgba(0,0,0,.15)'; g.lineWidth=Math.max(1,W*0.012);
-    g.beginPath(); g.moveTo(hl*0.94,-nw*0.80); g.lineTo(cabF+L*0.092,-hw*0.74); g.stroke();
-    g.beginPath(); g.moveTo(hl*0.94, nw*0.80); g.lineTo(cabF+L*0.092, hw*0.74); g.stroke();
-    /* 引擎盖中线（两条对称细线，车头才有「盖板」的层次） */
-    g.strokeStyle='rgba(255,255,255,.10)'; g.lineWidth=Math.max(1,W*0.022);
-    g.beginPath(); g.moveTo(hl*0.93,-hw*0.16); g.lineTo(cabF+L*0.10,-hw*0.14); g.stroke();
-    g.beginPath(); g.moveTo(hl*0.93, hw*0.16); g.lineTo(cabF+L*0.10, hw*0.14); g.stroke();
-    /* 后备箱分缝 + 两条边线（和车头对称） */
-    g.strokeStyle='rgba(0,0,0,.15)'; g.lineWidth=Math.max(1,W*0.012);
-    g.beginPath(); g.moveTo(-hl*0.62,-hw*0.74); g.lineTo(-hl*0.62,hw*0.74); g.stroke();
-    g.beginPath(); g.moveTo(-hl*0.93,-tw2*0.80); g.lineTo(-hl*0.62,-hw*0.72); g.stroke();
-    g.beginPath(); g.moveTo(-hl*0.93, tw2*0.80); g.lineTo(-hl*0.62, hw*0.72); g.stroke();
+    g.closePath(); g.fillStyle=carShade(glass,0.70*glK); g.fill();
+    /* 板件分缝（引擎盖轮廓 / 引擎盖中线 / 后备箱分缝）同样只在 LOD≥1 画：
+       LOD 0 下 7 条线全被 max 兜成 1px，铺在 28px 宽的车身上就是一片脏线，
+       层次没读出来，反而把车头糊掉了。 */
+    if(lod>=1){
+      /* 引擎盖轮廓：从车头两角收到 A 柱 */
+      g.strokeStyle='rgba(0,0,0,.15)'; g.lineWidth=Math.max(1,W*0.012);
+      g.beginPath(); g.moveTo(hl*0.94,-nw*0.80); g.lineTo(cabF+L*0.092,-hw*0.74); g.stroke();
+      g.beginPath(); g.moveTo(hl*0.94, nw*0.80); g.lineTo(cabF+L*0.092, hw*0.74); g.stroke();
+      /* 引擎盖中线（两条对称细线，车头才有「盖板」的层次） */
+      g.strokeStyle='rgba(255,255,255,.10)'; g.lineWidth=Math.max(1,W*0.022);
+      g.beginPath(); g.moveTo(hl*0.93,-hw*0.16); g.lineTo(cabF+L*0.10,-hw*0.14); g.stroke();
+      g.beginPath(); g.moveTo(hl*0.93, hw*0.16); g.lineTo(cabF+L*0.10, hw*0.14); g.stroke();
+      /* 后备箱分缝 + 两条边线（和车头对称） */
+      g.strokeStyle='rgba(0,0,0,.15)'; g.lineWidth=Math.max(1,W*0.012);
+      g.beginPath(); g.moveTo(-hl*0.62,-hw*0.74); g.lineTo(-hl*0.62,hw*0.74); g.stroke();
+      g.beginPath(); g.moveTo(-hl*0.93,-tw2*0.80); g.lineTo(-hl*0.62,-hw*0.72); g.stroke();
+      g.beginPath(); g.moveTo(-hl*0.93, tw2*0.80); g.lineTo(-hl*0.62, hw*0.72); g.stroke();
+    }
   }
-  /* 车漆扫光：一条斜向高光穿过车身（压在车厢之上），压掉「纯色块」的塑料感 */
-  var sweep=g.createLinearGradient(-hl,-hw*0.9,hl,hw*0.9);
-  sweep.addColorStop(0,'rgba(255,255,255,0)');
-  sweep.addColorStop(0.38,'rgba(255,255,255,.07)');
-  sweep.addColorStop(0.50,'rgba(255,255,255,.17)');
-  sweep.addColorStop(0.62,'rgba(255,255,255,.05)');
-  sweep.addColorStop(1,'rgba(255,255,255,0)');
+  /* 车漆扫光：压掉「纯色块」的塑料感。
+     v23 之前它是写死的斜向 (-hl,-hw*.9)→(hl,hw*.9)，等于「高光永远落在车身同一条对角线上」，
+     车一转就露馅。现在沿**世界光方向**铺，峰值落在迎光侧 —— 车掉头时高光会从车头扫到车尾，
+     这才是金属漆在固定光源下的表现。峰值避开 bg 渐变最亮的那一段（0.30），免得叠出粉白。 */
+  var spR=Math.max(hl,hw)*1.12;
+  var sweep=g.createLinearGradient(-_dx*spR,-_dy*spR, _dx*spR,_dy*spR);
+  sweep.addColorStop(0,   'rgba(255,255,255,.02)');
+  sweep.addColorStop(0.36,'rgba(255,255,255,.13)');
+  sweep.addColorStop(0.52,'rgba(255,255,255,.05)');
+  sweep.addColorStop(0.74,'rgba(255,255,255,0)');
+  sweep.addColorStop(1,   'rgba(0,0,0,.05)');
   g.fillStyle=sweep; g.fillRect(-hl,-hw,L,W);
 
   g.restore();   /* 结束裁剪 */
 
-  /* ---------- 4. 车头 / 车尾灯具 ---------- */
+  /* ---------- 4. 车头 / 车尾灯具 ----------
+     大灯 / 尾灯任何尺寸都画 —— 那是判断「车头朝哪」最直接的线索，不能砍。
+     格栅、灯晕、牌照则分级：它们在 45px 宽的车上只有 0.5~1.5px，属于噪点。 */
   if(kind!=='works'){
-    g.fillStyle='#242936';                               // 格栅（深色 + 两条银色横条）
-    roundRect(g,hl-W*0.072,-hw*0.30,W*0.034,hw*0.60,W*0.008); g.fill();
-    g.strokeStyle='rgba(206,216,232,.55)'; g.lineWidth=Math.max(1,W*0.010);
-    g.beginPath(); g.moveTo(hl-W*0.068,-hw*0.11); g.lineTo(hl-W*0.044,-hw*0.11); g.stroke();
-    g.beginPath(); g.moveTo(hl-W*0.068, hw*0.11); g.lineTo(hl-W*0.044, hw*0.11); g.stroke();
-    g.fillStyle='rgba(255,249,220,.97)';                 // 大灯（横向细条，贴着车头）
+    if(lod>=1){
+      g.fillStyle='#242936';                               // 格栅
+      roundRect(g,hl-W*0.072,-hw*0.30,W*0.034,hw*0.60,W*0.008); g.fill();
+    }
+    if(lod>=2){
+      /* 格栅横条：0.45px 的银线，小尺寸下没有意义。放大后条数也要跟上，否则格栅显得空。 */
+      g.strokeStyle='rgba(206,216,232,.55)'; g.lineWidth=Math.max(1,W*0.010);
+      for(var gi=0;gi<4;gi++){
+        var gy=hw*(-0.165+gi*0.11);
+        g.beginPath(); g.moveTo(hl-W*0.068,gy); g.lineTo(hl-W*0.044,gy); g.stroke();
+      }
+    }
+    g.fillStyle='rgba(255,249,220,.97)';                   // 大灯（横向细条，贴着车头）
     roundRect(g,hl-W*0.030,-hw*0.70,W*0.024,W*0.16,W*0.010); g.fill();
     roundRect(g,hl-W*0.030, hw*0.54,W*0.024,W*0.16,W*0.010); g.fill();
-    g.fillStyle='rgba(255,244,170,.15)';
-    g.beginPath(); g.ellipse(hl-W*0.004,-hw*0.62,W*0.070,W*0.050,0,0,6.283); g.fill();
-    g.beginPath(); g.ellipse(hl-W*0.004, hw*0.62,W*0.070,W*0.050,0,0,6.283); g.fill();
-    g.fillStyle='rgba(255,74,66,.95)';                   // 尾灯
+    if(lod>=1){
+      g.fillStyle='rgba(255,244,170,.15)';                 // 灯晕
+      g.beginPath(); g.ellipse(hl-W*0.004,-hw*0.62,W*0.070,W*0.050,0,0,6.283); g.fill();
+      g.beginPath(); g.ellipse(hl-W*0.004, hw*0.62,W*0.070,W*0.050,0,0,6.283); g.fill();
+    }
+    g.fillStyle='rgba(255,74,66,.95)';                     // 尾灯
     roundRect(g,-hl+W*0.004,-hw*0.74,W*0.024,hw*0.30,W*0.008); g.fill();
     roundRect(g,-hl+W*0.004, hw*0.44,W*0.024,hw*0.30,W*0.008); g.fill();
-    g.fillStyle='rgba(240,245,252,.88)';                 // 后牌照
-    roundRect(g,-hl+W*0.004,-hw*0.15,W*0.016,hw*0.30,W*0.005); g.fill();
-    g.fillStyle='rgba(246,250,255,.90)';                 // 前牌照
-    roundRect(g,hl-W*0.018,-hw*0.14,W*0.014,hw*0.28,W*0.004); g.fill();
+    if(lod>=2){
+      /* 牌照：0.6px 宽的白条，游戏内尺寸下只是两个白点。LOD 2 才画，
+         并补一圈深色描边，放大后才读得出是「牌照」而不是「反光」。 */
+      g.fillStyle='rgba(240,245,252,.88)';
+      roundRect(g,-hl+W*0.004,-hw*0.15,W*0.016,hw*0.30,W*0.005); g.fill();
+      g.fillStyle='rgba(246,250,255,.90)';
+      roundRect(g,hl-W*0.018,-hw*0.14,W*0.014,hw*0.28,W*0.004); g.fill();
+      g.strokeStyle='rgba(60,70,86,.55)'; g.lineWidth=Math.max(1,W*0.006);
+      roundRect(g,-hl+W*0.004,-hw*0.15,W*0.016,hw*0.30,W*0.005); g.stroke();
+      roundRect(g,hl-W*0.018,-hw*0.14,W*0.014,hw*0.28,W*0.004); g.stroke();
+    }
   }
 
-  /* ---------- 5. 后视镜 ---------- */
-  if(kind!=='works' && kind!=='bus'){
+  /* ---------- 5. 后视镜（LOD 0 时只有 1px 宽，看不出是镜子，跳过） ---------- */
+  if(lod>=1 && kind!=='works' && kind!=='bus'){
     var my=cabF-L*0.012, mw=W*0.040, mh=W*0.082;
     g.fillStyle=carShade(dark,0.86);
     roundRect(g,my,-hw*1.01,mw,mh,mh*0.40); g.fill();
@@ -3135,10 +3272,15 @@ function drawCar(g,b,dt,id){
     g.fillStyle='#fff6d2';
     roundRect(g,cabB+cabW*0.26,-cabW*0.32,cabW*0.40,cabW*0.64,cabW*0.12); g.fill();
     g.strokeStyle='rgba(122,88,0,.70)'; g.lineWidth=Math.max(1,W*0.011); g.stroke();
-    g.fillStyle='rgba(22,24,32,.88)';
-    for(var bz=0;bz<4;bz++){
-      roundRect(g,cabB+L*0.04+bz*L*0.064,-hw*0.975,L*0.022,hw*0.070,1); g.fill();
-      roundRect(g,cabB+L*0.04+bz*L*0.064, hw*0.905,L*0.022,hw*0.070,1); g.fill();
+    /* 车身两侧的黄黑棋盘格：LOD 0 时每格只有 1px，纯噪点，跳过；
+       LOD 2 放大后格子要更密（6 格），否则看着只是几条均匀黑条。 */
+    if(lod>=1){
+      var bzN=(lod>=2)?6:4, bzW=L*0.022*(4/bzN), bzStep=(L*0.256)/bzN;
+      g.fillStyle='rgba(22,24,32,.88)';
+      for(var bz=0;bz<bzN;bz++){
+        roundRect(g,cabB+L*0.04+bz*bzStep,-hw*0.975,bzW,hw*0.070,1); g.fill();
+        roundRect(g,cabB+L*0.04+bz*bzStep, hw*0.905,bzW,hw*0.070,1); g.fill();
+      }
     }
   }
   if(kind==='works'){
@@ -3150,9 +3292,13 @@ function drawCar(g,b,dt,id){
     g.lineTo(hl*1.19, hw*1.04); g.lineTo(hl*1.00, hw*0.92);
     g.closePath(); g.fill();
     g.strokeStyle='rgba(0,0,0,.34)'; g.lineWidth=Math.max(1,W*0.014); g.stroke();
-    g.fillStyle='#4a5260';                               // 斗齿
-    for(var tz=0;tz<4;tz++){
-      roundRect(g,hl*1.15,-hw*0.96+tz*hw*0.52,W*0.035,W*0.16,W*0.006); g.fill();
+    if(lod>=1){
+      /* 斗齿：LOD 0 跳过（1px 的小方块只是脏点）；LOD 2 加到 6 齿，放大后才像排齿。 */
+      var tzN=(lod>=2)?6:4, tzStep=(hw*1.86)/tzN;
+      g.fillStyle='#4a5260';
+      for(var tz=0;tz<tzN;tz++){
+        roundRect(g,hl*1.15,-hw*0.96+tz*tzStep,W*0.035,W*0.16,W*0.006); g.fill();
+      }
     }
   }
   g.restore();
